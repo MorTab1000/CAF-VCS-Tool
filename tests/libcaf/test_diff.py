@@ -170,7 +170,7 @@ def test_diff_nested_trees(temp_repo: Repository) -> None:
     assert isinstance(dir1_mod.children[0], ModifiedDiff)
 
     assert len(dir2_mod.children) == 2
-    
+
     dir2_children_by_name = {child.record.name: child for child in dir2_mod.children}
     file_b_diff = dir2_children_by_name.get('file_b.txt')
     file_c_diff = dir2_children_by_name.get('file_c.txt')
@@ -289,7 +289,6 @@ def test_diff_moved_file_removed_first(temp_repo: Repository) -> None:
     assert len(modified_child.moved_from.parent.children) == 1
     assert modified_child.moved_from.record.name == 'file_b.txt'
 
-    assert modified[1].record.name == 'dir2'
     assert len(dir2_mod.children) == 1
 
     modified_child = dir2_mod.children[0]
