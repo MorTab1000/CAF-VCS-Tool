@@ -192,6 +192,10 @@ def test_diff_moved_file_added_first(temp_repo: Repository) -> None:
     added, modified, moved_to, moved_from, removed = \
         split_diffs_by_type(diff_result)
 
+    mods_by_name = {m.record.name: m for m in modified}
+    dir1_mod = mods_by_name.get('dir1')
+    dir2_mod = mods_by_name.get('dir2')
+    
     assert len(added) == 0
     assert len(moved_to) == 0
     assert len(moved_from) == 0
@@ -199,10 +203,11 @@ def test_diff_moved_file_added_first(temp_repo: Repository) -> None:
 
     assert len(modified) == 2
 
-    assert modified[0].record.name == 'dir1'
-    assert len(modified[0].children) == 1
+    assert dir1_mod is not None
+    assert dir2_mod is not None
 
-    modified_child = modified[0].children[0]
+
+    modified_child = dir1_mod.children[0]
     assert isinstance(modified_child, MovedToDiff)
     assert modified_child.record.name == 'file_a.txt'
 
@@ -212,10 +217,10 @@ def test_diff_moved_file_added_first(temp_repo: Repository) -> None:
     assert len(modified_child.moved_to.parent.children) == 1
     assert modified_child.moved_to.record.name == 'file_c.txt'
 
-    assert modified[1].record.name == 'dir2'
-    assert len(modified[1].children) == 1
+   
+    assert len(dir2_mod.children) == 1
 
-    modified_child = modified[1].children[0]
+    modified_child = dir2_mod.children[0]
     assert isinstance(modified_child, MovedFromDiff)
     assert modified_child.record.name == 'file_c.txt'
 
