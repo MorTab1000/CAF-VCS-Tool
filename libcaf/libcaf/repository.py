@@ -587,6 +587,32 @@ class Repository:
              raise RepositoryError(f'Invalid commit reference: {e}')
         except Exception:
              raise RepositoryError(f'Commit "{commit_ref}" does not exist')
+        
+    @requires_repo
+    def delete_tag(self, tag_name: str) -> None:
+        """Delete a tag from the repository.
+
+        :param tag_name: The name of the tag to delete.
+        :raises ValueError: If tag_name is empty.
+        :raises RepositoryError: If the tag does not exist."""
+        if not tag_name:
+            raise ValueError('Tag name is missing')
+
+        if not self.tag_exists(tag_name):
+            raise RepositoryError(f'Tag "{tag_name}" does not exist')
+
+        (self.tags_dir() / tag_name).unlink()
+
+    @requires_repo
+    def tags(self) -> list[str]:
+        """Get a list of all tags in the repository.
+
+        :return: A list of tag names, sorted alphabetically."""
+        if not self.tags_dir().exists():
+            return []
+        
+        return sorted([x.name for x in self.tags_dir().iterdir() if x.is_file()])
+
 
     def head_file(self) -> Path:
         """Get the path to the HEAD file within the repository.
