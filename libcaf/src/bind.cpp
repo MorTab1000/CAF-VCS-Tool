@@ -2,7 +2,8 @@
 #include <pybind11/stl.h>
 #include "caf.h"
 #include "hash_types.h"
-#include "object_io.h" 
+#include "object_io.h"
+#include "tag.h"
 
 using namespace std;
 namespace py = pybind11;
@@ -58,4 +59,12 @@ PYBIND11_MODULE(_libcaf, m) {
         .def_readonly("message", &Commit::message)
         .def_readonly("timestamp", &Commit::timestamp)
         .def_readonly("parent", &Commit::parent);
+
+    py::class_<Tag>(m, "Tag")
+        .def(py::init<>())
+
+    py::class_<Tag>(m, "Tag")
+        .def(py::init<const std::string &, const std::string &>())
+        .def_readonly("commit_hash", &Tag::commit_hash)
+        .def_readonly("name", &Tag::name);
 }
