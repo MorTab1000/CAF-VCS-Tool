@@ -577,11 +577,16 @@ class Repository:
             raise RepositoryError(f'Tag "{tag_name}" already exists')
         # Ensure the tags directory exists
         self.tags_dir().mkdir(parents=True, exist_ok=True)
-
-        commit_hash = self.resolve_ref(commit_ref)
-        if not commit_hash:
-            raise RefError(f'Commit {commit_ref} cannot be resolved')
-        write_ref(self.tags_dir() / tag_name, commit_hash)
+        try:
+            commit_hash = self.resolve_ref(commit_ref)
+            if not commit_hash:
+                raise RepositoryError(f'Commit {commit_ref} cannot be resolved')
+            load_commit(self.objects_dir(), commit_hash)            
+            write_ref(self.tags_dir() / tag_name, commit_hash)
+        except RefError as e:
+             raise RepositoryError(f'Invalid commit reference: {e}')
+        except Exception:
+             raise RepositoryError(f'Commit "{commit_ref}" does not exist')
 
     def head_file(self) -> Path:
         """Get the path to the HEAD file within the repository.
