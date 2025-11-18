@@ -61,9 +61,6 @@ PYBIND11_MODULE(_libcaf, m) {
         .def_readonly("parent", &Commit::parent);
 
     py::class_<Tag>(m, "Tag")
-        .def(py::init<>())
-
-    py::class_<Tag>(m, "Tag")
         .def(py::init<const std::string &, const std::string &>())
         .def_readonly("commit_hash", &Tag::commit_hash)
         .def_readonly("name", &Tag::name);
