@@ -160,12 +160,10 @@ def cli() -> None:
                 'tag_name': {
                     'type': str,
                     'help': '📌 Name of the tag to create',
-                    'default': None,  # Positional argument will be handled by argparse implicitly
                 },
                 'commit_hash': {
                     'type': str,
                     'help': '🔗 Commit hash to tag',
-                    'default': None,  # Positional argument will be handled by argparse implicitly
                 },
             },
             'help': '➕ Create a new tag for a commit',

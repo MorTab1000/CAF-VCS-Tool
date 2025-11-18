@@ -57,3 +57,4 @@ def test_list_tags(temp_repo: Repository) -> None:
     tag_list = temp_repo.tags()
 
     assert tag_list == ['v1.0', 'v1.1', 'v1.2']
+    
