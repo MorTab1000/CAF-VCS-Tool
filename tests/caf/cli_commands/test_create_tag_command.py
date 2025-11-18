@@ -63,3 +63,13 @@ def test_create_tag_on_empty_repo_history(temp_repo: Repository, capsys: Capture
                                    commit_hash='fake_hash') == -1
     
     assert 'Repository error: Invalid commit reference: Invalid reference: fake_hash' in capsys.readouterr().err
+
+def test_create_tag_non_existent_commit(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    # A valid 40-char hash that definitely doesn't exist in the repo
+    ghost_hash = 'a' * 40
+    
+    assert cli_commands.create_tag(working_dir_path=temp_repo.working_dir, 
+                                   tag_name='ghost', 
+                                   commit_hash=ghost_hash) == -1
+    
+    assert f'Commit "{ghost_hash}" does not exist' in capsys.readouterr().err
