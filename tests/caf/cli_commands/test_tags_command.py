@@ -19,6 +19,8 @@ def test_tags_command_list(temp_repo: Repository, parse_commit_hash: Callable[[]
     cli_commands.create_tag(working_dir_path=working_dir, tag_name='beta', commit_hash=commit_hash)
     cli_commands.create_tag(working_dir_path=working_dir, tag_name='alpha', commit_hash=commit_hash)
     
+    capsys.readouterr() # Clear the buffer
+
     assert cli_commands.tags(working_dir_path=working_dir) == 0
 
     output = capsys.readouterr().out
