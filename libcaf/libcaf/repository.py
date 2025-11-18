@@ -11,7 +11,7 @@ from typing import Concatenate
 
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
-                        OBJECTS_SUBDIR, REFS_DIR)
+                        OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR)
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
 
@@ -545,10 +545,78 @@ class Repository:
                     parent_diff.children.append(local_diff)
 
         return top_level_diff.children
+    
+    @requires_repo
+    def tags_dir(self) -> Path:
+        """Get the path to the tags directory within the repository.
+
+        :return: The path to the tags directory."""
+        return self.refs_dir() / TAGS_DIR
+    
+    @requires_repo
+    def tag_exists(self, tag_name: str) -> bool:
+        """Check if a tag exists in the repository.
+
+        :param tag_name: The name of the tag to check.
+        :return: True if the tag exists, False otherwise."""
+        return (self.tags_dir() / tag_name).exists()
+
+    @requires_repo
+    def create_tag(self, tag_name: str, commit_ref: Ref) -> None:
+        """Create a new tag in the repository.
+
+        :param tag_name: The name of the tag to create.
+        :param commit_ref: The reference to the commit the tag points to.
+        :raises ValueError: If parameters are empty.
+        :raises RepositoryError: If the tag already exists or if the repository doesn't exist."""
+        if not tag_name:            
+            raise ValueError("Tag name is missing")
+        if not commit_ref:
+            raise ValueError("Commit reference is missing")
+        if self.tag_exists(tag_name):
+            raise RepositoryError(f'Tag "{tag_name}" already exists')
+        # Ensure the tags directory exists
+        self.tags_dir().mkdir(parents=True, exist_ok=True)
+        try:
+            commit_hash = self.resolve_ref(commit_ref)
+            if not commit_hash:
+                raise RepositoryError(f'Commit {commit_ref} cannot be resolved')
+            load_commit(self.objects_dir(), commit_hash)            
+            write_ref(self.tags_dir() / tag_name, commit_hash)
+        except RefError as e:
+             raise RepositoryError(f'Invalid commit reference: {e}')
+        except Exception:
+             raise RepositoryError(f'Commit "{commit_ref}" does not exist')
+        
+    @requires_repo
+    def delete_tag(self, tag_name: str) -> None:
+        """Delete a tag from the repository.
+
+        :param tag_name: The name of the tag to delete.
+        :raises ValueError: If tag_name is empty.
+        :raises RepositoryError: If the tag does not exist."""
+        if not tag_name:
+            raise ValueError('Tag name is missing')
+
+        if not self.tag_exists(tag_name):
+            raise RepositoryError(f'Tag "{tag_name}" does not exist')
+
+        (self.tags_dir() / tag_name).unlink()
+
+    @requires_repo
+    def tags(self) -> list[str]:
+        """Get a list of all tags in the repository.
+
+        :return: A list of tag names, sorted alphabetically."""
+        if not self.tags_dir().exists():
+            return []
+        
+        return sorted([x.name for x in self.tags_dir().iterdir() if x.is_file()])
+
 
     def head_file(self) -> Path:
         """Get the path to the HEAD file within the repository.
-
+                
         :return: The path to the HEAD file."""
         return self.repo_path() / HEAD_FILE
 
