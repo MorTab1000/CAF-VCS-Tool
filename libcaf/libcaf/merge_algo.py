@@ -37,6 +37,7 @@ def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
             continue
         
         # Add parents to stack
+        ancestors_a.add(current)
         parents = get_commit_parents(repo, current)
         stack.extend(parents)
 
@@ -49,6 +50,7 @@ def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
         current = queue.pop(0) # FIFO for BFS (closest first)
         
         if current in ancestors_a:
+            print("Found LCA:", current)
             return current # Found it!
         
         if current in visited_b:
