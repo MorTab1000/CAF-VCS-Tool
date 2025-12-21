@@ -30,15 +30,14 @@ def test_lca_branching(temp_repo: Repository):
     base = temp_repo.commit_working_dir("Auth", "Base")
     
     # Create Branch A (Manually verify HEAD points to Base first)
-    # Note: You might need to hack the HEAD ref in tests to simulate branching
-    # until you have 'caf checkout'
     
     # Simulate A1 parent is Base
-    temp_repo.update_ref('HEAD', base) 
     a1 = temp_repo.commit_working_dir("Auth", "A1")
 
     # Simulate B1 parent is Base
-    temp_repo.update_ref('HEAD', base)
+    (temp_repo.repo_path() / 'HEAD').write_text(base)
+    print("-------------------------------------------------")
+    print(base)
     b1 = temp_repo.commit_working_dir("Auth", "B1")
     
     from libcaf.merge_algo import find_lca
