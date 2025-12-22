@@ -15,18 +15,18 @@ def test_lca_simple_linear(temp_repo: Repository):
     c2 = temp_repo.commit_working_dir("Auth", "C2") # Parent is C1
     c3 = temp_repo.commit_working_dir("Auth", "C3") # Parent is C2
     
-    # Check LCA of C3 and C2 -> Should be C2
     from libcaf.merge_algo import find_lca
     assert find_lca(temp_repo, c3, c2) == c2
+    assert find_lca(temp_repo, c1, c2) == c1
 
 def test_lca_branching(temp_repo: Repository):
     """
     Test Y-Shape:
-          /-> A1 (Head A)
+         /-> A1 (Head A)
     Base 
-          \-> B1 (Head B)
+         \-> B1 (Head B)
     """
-    # Create Base
+    
     base = temp_repo.commit_working_dir("Auth", "Base")
     
     # Create Branch A (Manually verify HEAD points to Base first)
@@ -42,3 +42,4 @@ def test_lca_branching(temp_repo: Repository):
     
     from libcaf.merge_algo import find_lca
     assert find_lca(temp_repo, a1, b1) == base
+    

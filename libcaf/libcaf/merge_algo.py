@@ -9,8 +9,6 @@ def get_commit_parents(repo: Repository, commit_hash: str) -> list[str]:
     
     try:
         commit = load_commit(repo.objects_dir(), commit_hash)
-        # Assuming your Commit object has a .parent_hash or .parent attribute
-        # Adjust 'parent' to match your actual Commit class attribute name
         if commit.parent: 
             return [commit.parent]
         return []
@@ -36,7 +34,6 @@ def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
         if current in ancestors_a:
             continue
         
-        # Add parents to stack
         ancestors_a.add(current)
         parents = get_commit_parents(repo, current)
         stack.extend(parents)
