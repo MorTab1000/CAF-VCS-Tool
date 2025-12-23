@@ -1,4 +1,6 @@
 from libcaf.repository import Repository
+from libcaf.merge_algo import find_lca
+
 
 def test_lca_simple_linear(temp_repo: Repository):
     """
@@ -15,7 +17,6 @@ def test_lca_simple_linear(temp_repo: Repository):
     c2 = temp_repo.commit_working_dir("Auth", "C2") # Parent is C1
     c3 = temp_repo.commit_working_dir("Auth", "C3") # Parent is C2
     
-    from libcaf.merge_algo import find_lca
     assert find_lca(temp_repo, c3, c2) == c2
     assert find_lca(temp_repo, c1, c2) == c1
 
@@ -36,6 +37,5 @@ def test_lca_branching(temp_repo: Repository):
     (temp_repo.repo_path() / 'HEAD').write_text(base)
     b1 = temp_repo.commit_working_dir("Auth", "B1")
     
-    from libcaf.merge_algo import find_lca
     assert find_lca(temp_repo, a1, b1) == base
     

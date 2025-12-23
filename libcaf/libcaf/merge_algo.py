@@ -47,7 +47,7 @@ def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
         current = queue.pop(0) # FIFO for BFS (closest first)
         
         if current in ancestors_a:
-            return current # Found it!
+            return current
         
         if current in visited_b:
             continue
