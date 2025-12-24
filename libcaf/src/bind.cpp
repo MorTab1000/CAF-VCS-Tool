@@ -57,5 +57,5 @@ PYBIND11_MODULE(_libcaf, m) {
         .def_readonly("author", &Commit::author)
         .def_readonly("message", &Commit::message)
         .def_readonly("timestamp", &Commit::timestamp)
-        .def_readonly("parent", &Commit::parent);
+        .def_readonly("parents", &Commit::parents);
 }
