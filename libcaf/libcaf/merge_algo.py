@@ -1,4 +1,5 @@
 from typing import Set, Optional
+from collections import deque
 from libcaf.repository import Repository, load_commit
 
 def get_commit_parents(repo: Repository, commit_hash: str) -> list[str]:
@@ -40,11 +41,11 @@ def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
 
     # 2. Walk up B's history and look for the first match in A's set
     # Using a BFS here ensures we find the "closest" ancestor first
-    queue = [hash_b]
+    queue = deque([hash_b])
     visited_b: Set[str] = set()
 
     while queue:
-        current = queue.pop(0) # FIFO for BFS (closest first)
+        current = queue.popleft() # FIFO for BFS (closest first)
         
         if current in ancestors_a:
             return current
@@ -54,6 +55,6 @@ def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
         visited_b.add(current)
         
         parents = get_commit_parents(repo, current)
-        queue.extend(parents)
+        queue.extend(parents) # Add from the right
 
     return None # No common ancestor found (orphan branches)
