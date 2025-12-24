@@ -33,8 +33,8 @@ def test_lca_branching(temp_repo: Repository):
     # A1 parent is Base
     a1 = temp_repo.commit_working_dir("Auth", "A1")
 
-    # Simulate B1 parent is Base by manually chaning HEAD to be Base (instead of A1)
-    (temp_repo.repo_path() / 'HEAD').write_text(base)
+    # Simulate B1 parent is Base commit by manually changing HEAD to be Base (instead of A1)
+    temp_repo.update_head(base)
     b1 = temp_repo.commit_working_dir("Auth", "B1")
     
     assert find_lca(temp_repo, a1, b1) == base

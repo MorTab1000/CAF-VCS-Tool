@@ -613,12 +613,23 @@ class Repository:
         
         return sorted([x.name for x in self.tags_dir().iterdir() if x.is_file()])
 
-
+    @requires_repo
     def head_file(self) -> Path:
         """Get the path to the HEAD file within the repository.
                 
         :return: The path to the HEAD file."""
         return self.repo_path() / HEAD_FILE
+    
+    @requires_repo
+    def update_head(self, commit_ref: HashRef) -> None:
+        """
+        Update the HEAD file to point to a specific commit. 
+        This results in a 'detached HEAD' state if HEAD previously pointed to a branch.
+
+        :param commit_ref: The HashRef of the commit to write into HEAD.
+        :raises RepositoryNotFoundError: If the repository is not initialized.
+        """
+        write_ref(self.head_file(), commit_ref)
 
 
 def branch_ref(branch: str) -> SymRef:
