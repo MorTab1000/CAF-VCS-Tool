@@ -74,7 +74,6 @@ Commit load_commit(const std::string &root_dir, const std::string &commit_hash) 
     flock(fd, LOCK_UN);
     close(fd);
 
-    std::vector<std::string> parents = parent_str.empty() ? std::nullopt : std::make_optional(parent_str);
     return Commit(tree_hash, author, message, timestamp, parents);
 }
 

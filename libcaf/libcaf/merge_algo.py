@@ -2,19 +2,7 @@ from typing import Set, Optional
 from collections import deque
 from libcaf.repository import Repository, load_commit
 
-def get_commit_parents(repo: Repository, commit_hash: str) -> list[str]:
-    """Helper to get parent(s) of a commit. 
-    Currently handles single parent, but easy to expand for merge commits later."""
-    if not commit_hash:
-        return []
-    
-    try:
-        commit = load_commit(repo.objects_dir(), commit_hash)
-        if commit.parent: 
-            return [commit.parent]
-        return []
-    except Exception:
-        return []
+
 
 def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
     """
@@ -36,8 +24,8 @@ def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
             continue
         
         ancestors_a.add(current)
-        parents = get_commit_parents(repo, current)
-        stack.extend(parents)
+        commit = load_commit(repo, current)
+        stack.extend(commit.parents)
 
     # 2. Walk up B's history and look for the first match in A's set
     # Using a BFS here ensures we find the "closest" ancestor first
@@ -53,8 +41,8 @@ def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
         if current in visited_b:
             continue
         visited_b.add(current)
-        
-        parents = get_commit_parents(repo, current)
+        commit = load_commit(repo, current)
+        parents = commit.parents
         queue.extend(parents) # Add from the right
 
     return None # No common ancestor found (orphan branches)

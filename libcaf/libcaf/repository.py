@@ -385,8 +385,8 @@ class Repository:
 
         # Save the current working directory as a tree
         tree_hash = self.save_dir(self.working_dir)
-
-        commit = Commit(tree_hash, author, message, int(datetime.now().timestamp()), parent_commit_ref)
+        parents = [parent_commit_ref] if parent_commit_ref else []
+        commit = Commit(tree_hash, author, message, int(datetime.now().timestamp()), parents)
         commit_ref = HashRef(hash_object(commit))
 
         save_commit(self.objects_dir(), commit)
@@ -412,7 +412,7 @@ class Repository:
                 commit = load_commit(self.objects_dir(), current_hash)
                 yield LogEntry(HashRef(current_hash), commit)
 
-                current_hash = HashRef(commit.parent) if commit.parent else None
+                current_hash = HashRef(commit.parent[0]) if commit.parents else None
         except Exception as e:
             msg = f'Error loading commit {current_hash}'
             raise RepositoryError(msg) from e
