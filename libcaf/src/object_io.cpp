@@ -69,7 +69,6 @@ Commit load_commit(const std::string &root_dir, const std::string &commit_hash) 
         parents.push_back(read_length_prefixed_string(fd));
     }
     
-    std::string parent_str = read_length_prefixed_string(fd);
 
     flock(fd, LOCK_UN);
     close(fd);

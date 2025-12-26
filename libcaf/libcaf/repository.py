@@ -412,7 +412,7 @@ class Repository:
                 commit = load_commit(self.objects_dir(), current_hash)
                 yield LogEntry(HashRef(current_hash), commit)
 
-                current_hash = HashRef(commit.parent[0]) if commit.parents else None
+                current_hash = HashRef(commit.parents[0]) if commit.parents else None
         except Exception as e:
             msg = f'Error loading commit {current_hash}'
             raise RepositoryError(msg) from e
@@ -445,6 +445,7 @@ class Repository:
             commit1 = load_commit(self.objects_dir(), commit_hash1)
             commit2 = load_commit(self.objects_dir(), commit_hash2)
         except Exception as e:
+            print(f"DEBUG: The underlying C++ error is: {e}")
             msg = 'Error loading commit'
             raise RepositoryError(msg) from e
 
