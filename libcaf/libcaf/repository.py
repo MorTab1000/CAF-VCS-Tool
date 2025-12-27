@@ -445,7 +445,6 @@ class Repository:
             commit1 = load_commit(self.objects_dir(), commit_hash1)
             commit2 = load_commit(self.objects_dir(), commit_hash2)
         except Exception as e:
-            print(f"DEBUG: The underlying C++ error is: {e}")
             msg = 'Error loading commit'
             raise RepositoryError(msg) from e
 
