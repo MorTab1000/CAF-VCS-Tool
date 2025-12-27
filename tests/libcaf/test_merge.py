@@ -17,8 +17,8 @@ def test_lca_simple_linear(temp_repo: Repository):
     c2 = temp_repo.commit_working_dir("Auth", "C2") # Parent is C1
     c3 = temp_repo.commit_working_dir("Auth", "C3") # Parent is C2
     
-    assert find_lca(temp_repo, c3, c2) == c2
-    assert find_lca(temp_repo, c1, c2) == c1
+    assert find_lca(temp_repo.objects_dir(), c3, c2) == c2
+    assert find_lca(temp_repo.objects_dir(), c1, c2) == c1
 
 def test_lca_branching(temp_repo: Repository):
     """
@@ -37,5 +37,5 @@ def test_lca_branching(temp_repo: Repository):
     temp_repo.update_head(base)
     b1 = temp_repo.commit_working_dir("Auth", "B1")
     
-    assert find_lca(temp_repo, a1, b1) == base
+    assert find_lca(temp_repo.objects_dir(), a1, b1) == base
     

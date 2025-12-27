@@ -1,10 +1,11 @@
 from typing import Set, Optional
 from collections import deque
-from libcaf.repository import Repository, load_commit
+from pathlib import Path
+from libcaf.repository import load_commit
 
 
 
-def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
+def find_lca(repo_objects_dir: Path, hash_a: str, hash_b: str) -> Optional[str]:
     """
     Finds the Lowest Common Ancestor (LCA) of two commits.
     """
@@ -24,7 +25,7 @@ def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
             continue
         
         ancestors_a.add(current)
-        commit = load_commit(repo.objects_dir(), current)
+        commit = load_commit(repo_objects_dir, current)
         stack.extend(commit.parents)
 
     # 2. Walk up B's history and look for the first match in A's set
@@ -41,7 +42,7 @@ def find_lca(repo: Repository, hash_a: str, hash_b: str) -> Optional[str]:
         if current in visited_b:
             continue
         visited_b.add(current)
-        commit = load_commit(repo.objects_dir(), current)
+        commit = load_commit(repo_objects_dir, current)
         parents = commit.parents
         queue.extend(parents) # Add from the right
 
