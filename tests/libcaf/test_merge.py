@@ -1,6 +1,8 @@
 from libcaf.repository import Repository
 from libcaf.merge_algo import find_lca
-
+from libcaf import Commit
+from libcaf.plumbing import save_commit, hash_object
+from datetime import datetime
 
 def test_lca_simple_linear(temp_repo: Repository):
     """
@@ -39,3 +41,33 @@ def test_lca_branching(temp_repo: Repository):
     
     assert find_lca(temp_repo.objects_dir(), a1, b1) == base
     
+
+def test_lca_no_common_ancestor(temp_repo: Repository):
+    """
+    Test No Common Ancestor:
+    A1 (Head A)
+        
+    B1 (Head B)
+    """
+    commit_a = Commit(
+        "0000000000000000000000000000000000000000", 
+        "Tester", 
+        "Root A", 
+        int(datetime.now().timestamp()), 
+        [] 
+    )
+    save_commit(temp_repo.objects_dir(), commit_a)
+    hash_a = hash_object(commit_a)
+
+    commit_b = Commit(
+        "0000000000000000000000000000000000000000", 
+        "Tester", 
+        "Root B", 
+        int(datetime.now().timestamp()), 
+        [] 
+    )
+    save_commit(temp_repo.objects_dir(), commit_b)
+    hash_b = hash_object(commit_b)
+
+        
+    assert find_lca(temp_repo.objects_dir(), hash_a, hash_b) is None
