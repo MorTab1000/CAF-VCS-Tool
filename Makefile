@@ -120,7 +120,12 @@ help:
 	@echo "Current environment variables:"
 	@echo "  ENABLE_COVERAGE         = $(ENABLE_COVERAGE)"
 
+setup: run
+	@echo "📦 Deploying inside container..."
+	@docker exec $(CONTAINER_NAME) make deploy && $(MAKE) attach
+
 .PHONY: \
+	setup \
 	build-container run attach stop \
 	deploy deploy-libcaf deploy-caf \
 	test \
