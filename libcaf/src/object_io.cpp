@@ -162,3 +162,19 @@ TreeRecord load_tree_record(int fd) {
 
     return TreeRecord(record_type, hash, name);
 }
+
+Blob load_blob(const std::string &root_dir, const std::string &blob_hash) {
+    int fd = open_content_for_reading(root_dir, blob_hash);
+    std::vector<char> buffer;
+    char temp_buf[4096];
+    ssize_t bytes_read;
+    
+    while ((bytes_read = read(fd, temp_buf, sizeof(temp_buf))) > 0) {
+        buffer.insert(buffer.end(), temp_buf, temp_buf + bytes_read);
+    }
+    
+    close(fd);
+
+    std::string content(buffer.begin(), buffer.end());
+    return Blob(blob_hash, content);
+}

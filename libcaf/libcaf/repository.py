@@ -8,12 +8,12 @@ from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from typing import Concatenate
-
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
                         OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR)
-from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree
+from .plumbing import hash_object, load_blob, load_commit, load_tree, save_commit, save_file_content, save_tree
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
+from libcaf.merge_algo import find_lca
 
 
 class RepositoryError(Exception):
@@ -631,6 +631,69 @@ class Repository:
         """
         write_ref(self.head_file(), commit_ref)
 
+    @requires_repo
+    def merge(self, branch_name: str) -> str:
+        """
+        Merges the named branch into the current HEAD.
+        Returns a status message.
+        """
+        target_hash = self.head_commit()
+        source_ref = branch_ref(branch_name) 
+        source_hash = self.resolve_ref(source_ref)
+
+        if not source_hash:
+             raise RepositoryError(f"Branch {branch_name} not found")
+
+        lca = find_lca(self.objects_dir(), target_hash, source_hash)
+
+        # Case 1: Unrelated Histories
+        if lca is None:
+             return "Refusing to merge unrelated histories"
+
+        # Case 2: Source is Ancestor (We are ahead of them)
+        if lca == source_hash:
+             return "Already up to date"
+
+        # Case 3: Target is Ancestor (Fast-Forward)
+        if lca == target_hash:
+             # ACTION 1: Update Working Directory 
+             self.update_working_directory(source_hash) 
+             
+             # ACTION 2: Move Pointer
+             current_branch = read_ref(self.head_file()) # e.g. refs/heads/main
+             
+             if current_branch.startswith("refs/heads/"):
+                 write_ref(self.refs_dir() / current_branch, source_hash)
+             else:
+                 self.update_head(source_hash)
+                 
+             return f"Fast-forward merge to {source_hash}"
+
+        # Case 4: Real Merge (TODO)
+        raise NotImplementedError("3-way merge not implemented yet")
+    
+    def _checkout_tree(self, tree_hash: str, current_dir: Path):
+        """Helper to recursively write files."""
+        tree = load_tree(self.objects_dir(), tree_hash)
+        
+        for entry in tree.records.values():
+            dest_path = current_dir / entry.name
+            
+            if entry.type == TreeRecordType.TREE:
+                # 1. It's a folder: Create it + Recurse
+                dest_path.mkdir(exist_ok=True)
+                self._checkout_tree(entry.hash, dest_path)
+            else:
+                # 2. It's a file: Write content
+                blob = load_blob(self.objects_dir(), entry.hash)
+                dest_path.write_bytes(blob.data.encode('utf-8'))
+
+
+    def update_working_directory(self, commit_hash: str) -> None:
+            """Updates the working directory to match the commit's tree."""
+            commit = load_commit(self.objects_dir(), commit_hash)
+            # Start at the repository root
+            self._checkout_tree(commit.tree_hash, self.repo_path().parent)
 
 def branch_ref(branch: str) -> SymRef:
     """Create a symbolic reference for a branch name.
