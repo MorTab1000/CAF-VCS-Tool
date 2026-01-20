@@ -1,5 +1,5 @@
-from libcaf.ref import SymRef
 from libcaf.repository import Repository, branch_ref
+from libcaf.ref import SymRef
 from libcaf.merge_algo import find_lca
 from libcaf import Commit
 from libcaf.plumbing import save_commit, hash_object
@@ -63,7 +63,6 @@ def test_lca_no_common_ancestor(temp_repo: Repository):
     )
     save_commit(temp_repo.objects_dir(), commit_b)
     hash_b = hash_object(commit_b)
-
         
     assert find_lca(temp_repo.objects_dir(), hash_a, hash_b) is None
 
@@ -101,5 +100,42 @@ def test_merge_unrelated_histories(temp_repo: Repository):
     assert file_a.exists()
     assert file_a.read_text() == "root a"
     assert temp_repo.head_commit() == commit_a_hash
-    
+
     assert temp_repo.resolve_ref(SymRef("heads/other-branch")) == commit_b_hash
+
+def test_merge_already_up_to_date(temp_repo: Repository):
+    """
+    Case 2: Source is Ancestor (Already Up-to-date).
+    Target (HEAD) already contains the Source branch history.
+    """
+    common_file = temp_repo.working_dir / "common.txt"
+    common_file.write_text("base content")
+    base_commit_hash = temp_repo.commit_working_dir("Author", "Base Commit")
+    
+    temp_repo.add_branch("feature")
+    # Verify the branch is pointed to the base commit
+    temp_repo.update_ref(branch_ref("feature"), base_commit_hash)
+    
+    # Advance 'main' branch so it is ahead of 'feature'
+    main_file = temp_repo.working_dir / "main_only.txt"
+    main_file.write_text("main content")
+    head_commit_hash = temp_repo.commit_working_dir("Author", "Main ahead")
+    
+    try:
+        # 'feature' (base) is an ancestor of 'main' (head)
+        result = temp_repo.merge("feature")
+        assert "already up to date" in result.lower()
+        
+    except Exception as e:
+        pytest.fail(f"Merge crashed with an unexpected error: {e}")
+
+    assert temp_repo.head_commit() == head_commit_hash
+    
+    # Verify the source branch ('feature') remained unchanged
+    assert temp_repo.resolve_ref(SymRef("heads/feature")) == base_commit_hash
+    
+    # Verify working directory remained unchanged
+    assert common_file.exists()
+    assert common_file.read_text() == "base content"
+    assert main_file.exists()
+    assert main_file.read_text() == "main content"
