@@ -66,6 +66,7 @@ def test_lca_no_common_ancestor(temp_repo: Repository):
         
     assert find_lca(temp_repo.objects_dir(), hash_a, hash_b) is None
 
+
 def test_merge_unrelated_histories(temp_repo: Repository):
     """
     Case 1: Unrelated Histories (Disjoint).
@@ -103,6 +104,7 @@ def test_merge_unrelated_histories(temp_repo: Repository):
 
     assert temp_repo.resolve_ref(SymRef("heads/other-branch")) == commit_b_hash
 
+
 def test_merge_already_up_to_date(temp_repo: Repository):
     """
     Case 2: Source is Ancestor (Already Up-to-date).
@@ -139,3 +141,43 @@ def test_merge_already_up_to_date(temp_repo: Repository):
     assert common_file.read_text() == "base content"
     assert main_file.exists()
     assert main_file.read_text() == "main content"
+
+
+def test_merge_fast_forward_addition(temp_repo: Repository):
+    """
+    Case 3: Target (HEAD) is Ancestor of Source (Fast-forward).
+    HEAD is behind the source branch. HEAD should move forward, 
+    and the working directory must be updated to match the new tree.
+    """
+    common_file = temp_repo.working_dir / "common.txt"
+    common_file.write_text("common content")
+    base_commit_hash = temp_repo.commit_working_dir("Author", "Common Base")
+
+    # Detach from 'main' branch and verify HEAD is base commit so the two branches will share history
+    temp_repo.update_head(base_commit_hash)    
+    temp_repo.add_branch("feature")
+
+    # Create a new file commited only in the feature branch and make sure its pointing at it
+    feature_file = temp_repo.working_dir / "feature.txt"
+    feature_file.write_text("new feature content")
+    feature_commit_hash = temp_repo.commit_working_dir("Author", "Feature Work")
+    temp_repo.update_ref(branch_ref("feature"), feature_commit_hash)
+    
+    # Switch back to 'main' which is still at base commit
+    temp_repo.update_head(base_commit_hash)
+    temp_repo.update_working_directory(base_commit_hash)
+
+    try:
+        result = temp_repo.merge("feature")
+        assert "fast-forward" in result.lower()
+        
+    except Exception as e:
+        pytest.fail(f"Merge crashed with an unexpected error: {e}")
+
+    assert temp_repo.head_commit() == feature_commit_hash
+    assert temp_repo.resolve_ref(SymRef("heads/feature")) == feature_commit_hash
+    
+    assert feature_file.exists()
+    assert feature_file.read_text() == "new feature content"
+    assert common_file.exists()
+    assert common_file.read_text() == "common content"
