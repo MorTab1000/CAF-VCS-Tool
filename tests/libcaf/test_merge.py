@@ -1,9 +1,11 @@
-from libcaf.repository import Repository, branch_ref
+from libcaf.repository import Repository, branch_ref, RepositoryError
 from libcaf.ref import SymRef
 from libcaf.merge_algo import find_lca
 from libcaf import Commit
 from libcaf.plumbing import save_commit, hash_object
 from datetime import datetime
+import pytest
+
 
 def test_lca_simple_linear(temp_repo: Repository):
     """
@@ -230,3 +232,24 @@ def test_merge_fast_forward_deletion(temp_repo: Repository):
     
     assert common_file.exists()
     assert common_file.read_text() == "i will stay"
+
+
+#TODO: fix merge function to make the test pass (well at least it should)
+def test_merge_non_existent_branch(temp_repo: Repository):
+    """
+    Case: Non-existent Branch.
+    Attempting to merge a branch that does not exist should raise a RepositoryError.
+    """
+    (temp_repo.working_dir / "init.txt").write_text("initial")
+    temp_repo.commit_working_dir("Author", "Initial commit")
+
+    # Try to merge a branch that was never created. We expect the custom RepositoryError to be raised
+    with pytest.raises(RepositoryError) as excinfo:
+        temp_repo.merge("ghost-branch")
+
+    assert "not found" in str(excinfo.value).lower()
+    assert "ghost-branch" in str(excinfo.value)
+
+    # Verify HEAD didn't move or change (since the merge shouldn't have even started)
+    assert len(temp_repo.branches()) == 1
+    assert temp_repo.branches()[0] == "main" # Assuming default branch is main
