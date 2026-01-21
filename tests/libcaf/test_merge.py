@@ -145,9 +145,9 @@ def test_merge_already_up_to_date(temp_repo: Repository):
 
 def test_merge_fast_forward_addition(temp_repo: Repository):
     """
-    Case 3: Target (HEAD) is Ancestor of Source (Fast-forward).
-    HEAD is behind the source branch. HEAD should move forward, 
-    and the working directory must be updated to match the new tree.
+    Case 3a: Target (HEAD) is Ancestor of Source (Fast-forward Addition).
+    The source branch has a new file. After merging, HEAD should move forward 
+    and the working directory must be updated to include the new file.
     """
     common_file = temp_repo.working_dir / "common.txt"
     common_file.write_text("common content")
@@ -181,3 +181,52 @@ def test_merge_fast_forward_addition(temp_repo: Repository):
     assert feature_file.read_text() == "new feature content"
     assert common_file.exists()
     assert common_file.read_text() == "common content"
+
+
+# TODO: fix "update_working_directory" to make the test pass
+def test_merge_fast_forward_deletion(temp_repo: Repository):
+    """
+    Case 3b: Fast-forward with Deletion.
+    The source branch deleted a file. After merging, 
+    that file should also be removed from the target's working directory.
+    """
+    common_file = temp_repo.working_dir / "stay.txt"
+    delete_file = temp_repo.working_dir / "delete_me.txt"
+    
+    common_file.write_text("i will stay")
+    delete_file.write_text("i will be deleted")
+    
+    base_hash = temp_repo.commit_working_dir("Author", "Base with two files")
+    
+    temp_repo.update_head(base_hash)
+    temp_repo.add_branch("feature")
+    
+    # In the feature branch delete the file and commit
+    if delete_file.exists():
+        delete_file.unlink()
+        
+    feature_commit_hash = temp_repo.commit_working_dir("Author", "Deleted a file")
+    temp_repo.update_ref(branch_ref("feature"), feature_commit_hash)
+    
+    # Switch back to 'main' (base_hash), delete_me.txt should reappear on disk
+    temp_repo.update_head(base_hash)
+    temp_repo.update_working_directory(base_hash)
+    
+    assert delete_file.exists(), "Setup failed: file should exist in main before merge"
+    
+    try:
+        result = temp_repo.merge("feature")
+        assert "fast-forward" in result.lower()
+        
+    except Exception as e:
+        pytest.fail(f"Merge crashed with an unexpected error: {e}")
+
+    assert temp_repo.head_commit() == feature_commit_hash
+    assert temp_repo.resolve_ref(SymRef("heads/feature")) == feature_commit_hash
+    
+    # CRITICAL: Verify the file was actually deleted from the disk
+    # This is where the test is expected to fail until update_working_directory is fixed
+    assert not delete_file.exists(), "The file should have been deleted by the merge"
+    
+    assert common_file.exists()
+    assert common_file.read_text() == "i will stay"
