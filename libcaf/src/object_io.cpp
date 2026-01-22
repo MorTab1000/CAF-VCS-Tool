@@ -179,12 +179,17 @@ Blob load_blob(const std::string &root_dir, const std::string &blob_hash) {
     std::string content;
     content.resize(st.st_size);
 
-    char* ptr = &content[0];
+    char* ptr = &content.data();
     ssize_t total_read = 0;
     ssize_t bytes_read;
     
     while (total_read < st.st_size && (bytes_read = read(fd, ptr + total_read, st.st_size - total_read)) > 0) {
         total_read += bytes_read;
+    }
+
+    if (total_read != st.st_size) {
+        close(fd);
+        throw std::runtime_error("Failed to read entire blob");
     }
 
     flock(fd, LOCK_UN);
