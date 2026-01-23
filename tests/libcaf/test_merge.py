@@ -5,6 +5,7 @@ from libcaf import Commit
 from libcaf.plumbing import save_commit, hash_object
 from datetime import datetime
 import pytest
+from libcaf.ref import write_ref
 
 
 def test_lca_simple_linear(temp_repo: Repository):
@@ -151,23 +152,31 @@ def test_merge_fast_forward_addition(temp_repo: Repository):
     The source branch has a new file. After merging, HEAD should move forward 
     and the working directory must be updated to include the new file.
     """
+    # 1. Setup Base State
     common_file = temp_repo.working_dir / "common.txt"
     common_file.write_text("common content")
     base_commit_hash = temp_repo.commit_working_dir("Author", "Common Base")
 
-    # Detach from 'main' branch and verify HEAD is base commit so the two branches will share history
-    temp_repo.update_head(base_commit_hash)    
-    temp_repo.add_branch("feature")
-
-    # Create a new file commited only in the feature branch and make sure its pointing at it
+    # 2. Setup Feature Branch
+    # (We are currently on the base commit, so we can just commit on top of it)
     feature_file = temp_repo.working_dir / "feature.txt"
     feature_file.write_text("new feature content")
+    
     feature_commit_hash = temp_repo.commit_working_dir("Author", "Feature Work")
+    temp_repo.add_branch("feature")
+    # Manually update the feature branch ref to point to this new commit
     temp_repo.update_ref(branch_ref("feature"), feature_commit_hash)
     
-    # Switch back to 'main' which is still at base commit
-    temp_repo.update_head(base_commit_hash)
+    # 3. Reset Environment to 'main' (The Fix)
+    # A. Reset files to base state (remove feature.txt)
     temp_repo.update_working_directory(base_commit_hash)
+
+    # B. Point 'main' ref to base commit
+    main_ref = branch_ref("main")
+    temp_repo.update_ref(main_ref, base_commit_hash)
+    
+    # C. Point HEAD to 'main' (Crucial step!)
+    write_ref(temp_repo.head_file(), main_ref)
 
     try:
         result = temp_repo.merge("feature")
@@ -176,16 +185,16 @@ def test_merge_fast_forward_addition(temp_repo: Repository):
     except Exception as e:
         pytest.fail(f"Merge crashed with an unexpected error: {e}")
 
+    # 4. Verify Refs
     assert temp_repo.head_commit() == feature_commit_hash
     assert temp_repo.resolve_ref(SymRef("heads/feature")) == feature_commit_hash
     
-    assert feature_file.exists()
+    # 5. Verify Files
+    assert feature_file.exists(), "The new file should have been added"
     assert feature_file.read_text() == "new feature content"
     assert common_file.exists()
     assert common_file.read_text() == "common content"
 
-
-# TODO: fix "update_working_directory" to make the test pass
 def test_merge_fast_forward_deletion(temp_repo: Repository):
     """
     Case 3b: Fast-forward with Deletion.
@@ -200,7 +209,6 @@ def test_merge_fast_forward_deletion(temp_repo: Repository):
     
     base_hash = temp_repo.commit_working_dir("Author", "Base with two files")
     
-    temp_repo.update_head(base_hash)
     temp_repo.add_branch("feature")
     
     # In the feature branch delete the file and commit
@@ -211,11 +219,11 @@ def test_merge_fast_forward_deletion(temp_repo: Repository):
     temp_repo.update_ref(branch_ref("feature"), feature_commit_hash)
     
     # Switch back to 'main' (base_hash), delete_me.txt should reappear on disk
-    temp_repo.update_head(base_hash)
-    temp_repo.update_working_directory(base_hash)
-    
+    temp_repo.update_working_directory(base_hash)  #The suggested swap
+    main_ref = branch_ref("main") 
+    temp_repo.update_ref(main_ref, base_hash)           # 1. Make 'main' point to the base commit
+    write_ref(temp_repo.head_file(), main_ref)
     assert delete_file.exists(), "Setup failed: file should exist in main before merge"
-    
     try:
         result = temp_repo.merge("feature")
         assert "fast-forward" in result.lower()
@@ -234,7 +242,6 @@ def test_merge_fast_forward_deletion(temp_repo: Repository):
     assert common_file.read_text() == "i will stay"
 
 
-#TODO: fix merge function to make the test pass (well at least it should)
 def test_merge_non_existent_branch(temp_repo: Repository):
     """
     Case: Non-existent Branch.
