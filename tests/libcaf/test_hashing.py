@@ -38,8 +38,8 @@ def test_tree_hash() -> None:
 
 
 def test_same_blob_objects_get_same_hash() -> None:
-    blob1 = Blob('1234567890abcdef')
-    blob2 = Blob('1234567890abcdef')
+    blob1 = Blob('1234567890abcdef', '')
+    blob2 = Blob('1234567890abcdef', '')
 
     assert hash_object(blob1) == hash_object(blob2)
 
@@ -69,8 +69,8 @@ def test_same_tree_objects_get_same_hash() -> None:
 
 
 def test_different_hashes_for_different_blobs() -> None:
-    blob1 = Blob('1234567890abcdef')
-    blob2 = Blob('abcdef1234567890')
+    blob1 = Blob('1234567890abcdef', '')
+    blob2 = Blob('abcdef1234567890', '')
 
     assert hash_object(blob1) != hash_object(blob2)
 
