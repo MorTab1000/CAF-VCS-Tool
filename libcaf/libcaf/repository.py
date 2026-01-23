@@ -709,7 +709,7 @@ class Repository:
             # 2. Delete files no longer present
             for path in paths_to_delete:
                 full_path = self.working_dir / path
-                if full_path.parts[0] == self.repo_dir.name:  # Skip repository directory
+                if full_path.is_relative_to(self.repo_dir):  # Skip repository directory
                     continue
                 # Only delete if it exists (might have been manually deleted by user)
                 if full_path.exists() or full_path.is_symlink():
