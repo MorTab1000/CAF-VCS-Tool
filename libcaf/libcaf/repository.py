@@ -646,20 +646,15 @@ class Repository:
 
         lca = find_lca(self.objects_dir(), target_hash, source_hash)
 
-        # Case 1: Unrelated Histories
         if lca is None:
              return "Refusing to merge unrelated histories"
 
-        # Case 2: Source is Ancestor (We are ahead of them)
         if lca == source_hash:
              return "Already up to date"
 
-        # Case 3: Target is Ancestor (Fast-Forward)
         if lca == target_hash:
-             # ACTION 1: Update Working Directory 
              self.update_working_directory(source_hash) 
              
-             # ACTION 2: Move Pointer
              current_branch = read_ref(self.head_file()) # e.g. refs/heads/main
              
              if current_branch.startswith("refs/heads/"):
