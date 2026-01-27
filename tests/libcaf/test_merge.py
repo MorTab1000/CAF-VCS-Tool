@@ -84,7 +84,7 @@ def test_merge_unrelated_histories(temp_repo: Repository):
         "Author1", 
         "Root B", 
         int(datetime.now().timestamp()), 
-        [] # No parents = Orphan commit
+        [] 
     )
     save_commit(temp_repo.objects_dir(), commit_b)
     commit_b_hash = hash_object(commit_b)

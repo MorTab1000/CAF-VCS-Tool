@@ -14,7 +14,7 @@ from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LEN
 from .plumbing import hash_object, load_blob, load_commit, load_tree, save_commit, save_file_content, save_tree
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
 from libcaf.merge_algo import find_lca
-
+from enum import Enum, auto
 
 class RepositoryError(Exception):
     """Exception raised for repository-related errors."""
@@ -22,6 +22,11 @@ class RepositoryError(Exception):
 
 class RepositoryNotFoundError(RepositoryError):
     """Exception raised when a repository is not found."""
+
+class MergeResult(Enum):
+    UP_TO_DATE = auto()
+    FAST_FORWARD = auto()
+    MERGE_CREATED = auto()
 
 
 @dataclass
@@ -632,39 +637,31 @@ class Repository:
         write_ref(self.head_file(), commit_ref)
 
     @requires_repo
-    def merge(self, branch_name: str) -> str:
+    def merge(self, target_branch: str, source_branch: str) -> MergeResult:
         """
-        Merges the named branch into the current HEAD.
-        Returns a status message.
+        Merges the source_branch into target_branch.
         """
-        if not self.branch_exists(branch_name):
-             raise RepositoryError(f"Branch {branch_name} not found")
+        if not self.branch_exists(source_branch):
+             raise RepositoryError(f"Branch {source_branch} not found")
+        if not self.branch_exists(target_branch):
+                raise RepositoryError(f"Branch {target_branch} not found")
         
-        target_hash = self.head_commit()
-        source_ref = branch_ref(branch_name) 
-        source_hash = self.resolve_ref(source_ref)
+        target_hash = self.resolve_ref(branch_ref(target_branch))
+        source_hash = self.resolve_ref(branch_ref(source_branch))
 
         lca = find_lca(self.objects_dir(), target_hash, source_hash)
 
         if lca is None:
-             return "Refusing to merge unrelated histories"
+             raise RepositoryError("refusing to merge unrelated histories")
 
         if lca == source_hash:
-             return "Already up to date"
+             return MergeResult.UP_TO_DATE
 
         if lca == target_hash:
-             self.update_working_directory(source_hash) 
-             
-             current_branch = read_ref(self.head_file()) # e.g. refs/heads/main
-             
-             if current_branch.startswith("refs/heads/"):
-                 write_ref(self.refs_dir() / current_branch, source_hash)
-             else:
-                 self.update_head(source_hash)
-                 
-             return f"Fast-forward merge to {source_hash}"
+             self.update_ref(branch_ref(target_branch), source_hash)
+             return MergeResult.FAST_FORWARD
 
-        # Case 4: Real Merge (TODO)
+        #(TODO)
         raise NotImplementedError("3-way merge not implemented yet")
     
     def _checkout_tree(self, tree_hash: str, current_dir: Path):
