@@ -81,11 +81,6 @@ def load_tree(root_dir: str | Path, hash_value: str) -> Tree:
 
     return _libcaf.load_tree(root_dir, hash_value)
 
-def load_blob(root_dir: str | Path, blob_hash: str) -> Blob:
-    if isinstance(root_dir, Path):
-        root_dir = str(root_dir)
-    return _libcaf.load_blob(root_dir, blob_hash)
-
 
 __all__ = [
     'delete_content',
@@ -93,7 +88,6 @@ __all__ = [
     'hash_object',
     'load_commit',
     'load_tree',
-    'load_blob',
     'open_content_for_reading',
     'open_content_for_writing',
     'save_commit',

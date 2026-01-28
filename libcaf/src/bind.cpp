@@ -27,14 +27,11 @@ PYBIND11_MODULE(_libcaf, m) {
     m.def("load_commit", &load_commit);
     m.def("save_tree", &save_tree);
     m.def("load_tree", &load_tree);
-    m.def("load_blob", &load_blob, "Load a blob object by hash");
+
     py::class_<Blob>(m, "Blob")
-    .def(py::init<std::string, std::string>())
-    .def_readonly("hash", &Blob::hash)
-    .def_property_readonly("data", [](const Blob &b) {
-        return py::bytes(b.data); 
-    });
-    
+    .def(py::init<std::string>())
+    .def_readonly("hash", &Blob::hash);
+
     py::enum_<TreeRecord::Type>(m, "TreeRecordType")
     .value("TREE", TreeRecord::Type::TREE)
     .value("BLOB", TreeRecord::Type::BLOB)

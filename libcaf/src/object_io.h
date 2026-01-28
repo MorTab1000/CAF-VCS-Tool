@@ -14,7 +14,6 @@ void save_commit(const std::string &root_dir, const Commit &commit);
 Commit load_commit(const std::string &root_dir, const std::string &hash);
 void save_tree(const std::string &root_dir, const Tree &tree);
 Tree load_tree(const std::string &root_dir, const std::string &hash);
-Blob load_blob(const std::string &root_dir, const std::string &blob_hash);
 
 
 #endif // OBJECT_IO_H

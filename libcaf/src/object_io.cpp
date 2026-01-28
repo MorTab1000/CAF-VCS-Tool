@@ -10,7 +10,6 @@
 #include "caf.h"
 #include "object_io.h"
 #include "hash_types.h"
-#include <sys/stat.h>
 
 // Maximum string length for length-prefixed strings
 constexpr uint32_t MAX_LENGTH = 1024 * 1024;  // 1 MB limit for strings
@@ -81,7 +80,7 @@ void save_tree(const std::string &root_dir, const Tree &tree) {
     std::string tree_hash = hash_object(tree);
 
     int fd = open_content_for_writing(root_dir, tree_hash);
-   
+
      try {
         uint32_t num_records = tree.records.size();
         if (write(fd, &num_records, sizeof(num_records)) != sizeof(num_records))
@@ -162,39 +161,4 @@ TreeRecord load_tree_record(int fd) {
     std::string name = read_length_prefixed_string(fd);
 
     return TreeRecord(record_type, hash, name);
-}
-
-Blob load_blob(const std::string &root_dir, const std::string &blob_hash) {
-    int fd = open_content_for_reading(root_dir, blob_hash);
-    if (fd < 0) {
-        throw std::runtime_error("Object not found: " + blob_hash);
-    }
-
-    struct stat st;
-    if (fstat(fd, &st) < 0) {
-        close(fd);
-        throw std::runtime_error("Failed to get file size");
-    }
-    
-    std::string content;
-    content.resize(st.st_size);
-
-    char* ptr = content.data();
-    ssize_t total_read = 0;
-    ssize_t bytes_read;
-    
-    while (total_read < st.st_size && (bytes_read = read(fd, ptr + total_read, st.st_size - total_read)) > 0) {
-        total_read += bytes_read;
-    }
-
-    if (total_read != st.st_size) {
-        close(fd);
-        throw std::runtime_error("Failed to read entire blob");
-    }
-
-    flock(fd, LOCK_UN);
-    close(fd);
-
-    // use std::move to prevent one final copy when creating the Blob
-    return Blob(blob_hash, std::move(content));
 }

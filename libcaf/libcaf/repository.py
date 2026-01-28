@@ -11,7 +11,7 @@ from typing import Concatenate
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
                         OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR)
-from .plumbing import hash_object, load_blob, load_commit, load_tree, save_commit, save_file_content, save_tree
+from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
 from libcaf.merge_algo import find_lca
 from enum import Enum, auto
@@ -670,113 +670,7 @@ class Repository:
         #(TODO)
         raise NotImplementedError("3-way merge not implemented yet")
     
-    def _checkout_tree(self, tree_hash: str, current_dir: Path):
-        """Helper to recursively write files."""
-        tree = load_tree(self.objects_dir(), tree_hash)
-        
-        for entry in tree.records.values():
-            dest_path = current_dir / entry.name
-            
-            if entry.type == TreeRecordType.TREE:
-                # 1. It's a folder: Create it + Recurse
-                dest_path.mkdir(exist_ok=True)
-                self._checkout_tree(entry.hash, dest_path)
-            else:
-                # 2. It's a file: Write content
-                blob = load_blob(self.objects_dir(), entry.hash)
-                dest_path.write_bytes(blob.data.encode('utf-8'))
-
-
-    def update_working_directory(self, source_commit_hash: str) -> None:
-            """Updates the working directory to match the commit's tree."""
-            source_commit = load_commit(self.objects_dir(), source_commit_hash)
-            source_tree_hash = source_commit.tree_hash
-            
-            target_commit_hash = self.head_commit()
-            target_tree_hash = None
-
-            if target_commit_hash:
-                try:
-                    target_commit = load_commit(self.objects_dir(), target_commit_hash)
-                    target_tree_hash = target_commit.tree_hash
-                except Exception:
-                    raise RepositoryError(f'Error loading target commit {target_commit_hash}')
-            # 1. Determine diffs
-            paths_to_delete, paths_to_update = self._diff_trees(target_tree_hash, source_tree_hash)
-
-            # 2. Delete files no longer present
-            for path in paths_to_delete:
-                full_path = self.working_dir / path
-                if full_path.is_relative_to(self.repo_dir):  # Skip repository directory
-                    continue
-                # Only delete if it exists (might have been manually deleted by user)
-                if full_path.exists() or full_path.is_symlink():
-                    try:
-                        full_path.unlink() # Delete file
-                    except Exception:
-                        raise RepositoryError(f'Error deleting file {full_path}')
-            # 3. Update/Add new files
-            for path, blob_hash in paths_to_update.items():
-                full_path = self.working_dir / path
-                try:
-                    blob = load_blob(self.objects_dir(), blob_hash)
-                    full_path.parent.mkdir(parents=True, exist_ok=True) # Ensure parent dirs exist
-                    full_path.write_bytes(blob.data)
-                except Exception:
-                    raise RepositoryError(f'Error writing file {full_path}')
-
-    def _diff_trees(self, old_tree_hash: str | None, new_tree_hash: str) -> tuple[set[Path], dict[Path, str]]:
-        """
-        Compares two trees and returns:
-        1. paths_to_delete: Files in old_tree but not in new_tree.
-        2. paths_to_update: Files in new_tree that are different/new.
-           (Returns a dict of {path: blob_hash} for updates)
-        """
-        # 1. Flatten both trees into simple maps: {Path: Hash}
-        old_map = self._get_flat_tree_map(old_tree_hash, Path("")) if old_tree_hash else {}
-        new_map = self._get_flat_tree_map(new_tree_hash, Path(""))
-        
-        paths_to_delete = set()
-        paths_to_update = {}
-
-        # 2. Identify Deletions (In Old, NOT in New)
-        for path in old_map:
-            if path not in new_map:
-                paths_to_delete.add(path)
-        
-        # 3. Identify Updates (In New, DIFFERENT from Old)
-        for path, new_blob_hash in new_map.items():
-            # Update if it didn't exist OR if the hash changed
-            if path not in old_map or old_map[path] != new_blob_hash:
-                paths_to_update[path] = new_blob_hash
-
-        return paths_to_delete, paths_to_update
-
-    def _get_flat_tree_map(self, tree_hash: str, prefix: Path) -> dict[Path, str]:
-        """Recursively builds a map of {Path: BlobHash} for a whole tree."""
-        # Handle empty/null trees
-        if not tree_hash: 
-            return {}
-        
-        try:
-            tree = load_tree(self.objects_dir(), tree_hash)
-        except Exception:
-            raise RepositoryError(f'Error loading tree {tree_hash}')
-
-        result = {}
-        
-        # Iterate over records (values)
-        for entry in tree.records.values():
-            full_path = prefix / entry.name
-            
-            if entry.type == TreeRecordType.TREE:
-                # Recursively add subtree items
-                result.update(self._get_flat_tree_map(entry.hash, full_path))
-            elif entry.type == TreeRecordType.BLOB:
-                # Add file
-                result[full_path] = entry.hash
-                
-        return result
+  
 
 def branch_ref(branch: str) -> SymRef:
     """Create a symbolic reference for a branch name.
