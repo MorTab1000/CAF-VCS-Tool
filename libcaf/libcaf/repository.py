@@ -23,12 +23,6 @@ class RepositoryError(Exception):
 class RepositoryNotFoundError(RepositoryError):
     """Exception raised when a repository is not found."""
 
-class BranchNotFoundError(RepositoryError):
-    """Exception raised when a requested branch os not found."""
-
-class UnrelatedHistoriesError(RepositoryError):
-    """Exception raised when trying to merge two branches that share no common ancestor."""
-
 class MergeResult(Enum):
     UP_TO_DATE = auto()
     FAST_FORWARD = auto()
@@ -643,29 +637,25 @@ class Repository:
         write_ref(self.head_file(), commit_ref)
 
     @requires_repo
-    def merge(self, target_branch: str, source_branch: str) -> MergeResult:
+    def merge(self, target_ref: HashRef, source_ref: HashRef) -> tuple[MergeResult, HashRef]:
         """
         Merges the source_branch into target_branch.
         """
-        if not self.branch_exists(source_branch):
-             raise BranchNotFoundError(f"Branch {source_branch} not found")
-        if not self.branch_exists(target_branch):
-                raise BranchNotFoundError(f"Branch {target_branch} not found")
+        target_hash = target_ref.hash
+        source_hash = source_ref.hash
         
-        target_hash = self.resolve_ref(branch_ref(target_branch))
-        source_hash = self.resolve_ref(branch_ref(source_branch))
+
 
         lca = find_lca(self.objects_dir(), target_hash, source_hash)
 
         if lca is None:
-             raise UnrelatedHistoriesError("refusing to merge unrelated histories")
+             raise NotImplementedError("Unrelated histories is not supportedS")
 
         if lca == source_hash:
-             return MergeResult.UP_TO_DATE
+             return MergeResult.UP_TO_DATE, target_ref
 
         if lca == target_hash:
-             self.update_ref(branch_ref(target_branch), source_hash)
-             return MergeResult.FAST_FORWARD
+             return MergeResult.FAST_FORWARD, source_ref
 
         #(TODO)
         raise NotImplementedError("3-way merge not implemented yet")
