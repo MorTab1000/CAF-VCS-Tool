@@ -643,8 +643,16 @@ class Repository:
         """
         target_hash = target_ref.hash
         source_hash = source_ref.hash
-        
+    
+        try:
+            load_commit(self.objects_dir(), target_hash)
+        except Exception:
+            raise RepositoryError(f"Target commit {target_hash} not found or invalid")
 
+        try:
+            load_commit(self.objects_dir(), source_hash)
+        except Exception:
+            raise RepositoryError(f"Source commit {source_hash} not found or invalid")
 
         lca = find_lca(self.objects_dir(), target_hash, source_hash)
 
