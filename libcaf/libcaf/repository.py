@@ -641,8 +641,8 @@ class Repository:
         """
         Merges the source_branch into target_branch.
         """
-        target_hash = target_ref.hash
-        source_hash = source_ref.hash
+        target_hash = target_ref
+        source_hash = source_ref
     
         try:
             load_commit(self.objects_dir(), target_hash)
