@@ -637,12 +637,17 @@ class Repository:
         write_ref(self.head_file(), commit_ref)
 
     @requires_repo
-    def merge(self, target_ref: HashRef, source_ref: HashRef) -> tuple[MergeResult, HashRef]:
+    def merge(self, target_ref: Ref, source_ref: Ref) -> tuple[MergeResult, HashRef]:
         """
         Merges the source_branch into target_branch.
         """
-        target_hash = target_ref
-        source_hash = source_ref
+        target_hash = self.resolve_ref(target_ref)
+        source_hash = self.resolve_ref(source_ref)
+
+        if target_hash is None:
+            raise RefError(f"Target reference {target_ref} cannot be resolved")
+        if source_hash is None:
+            raise RefError(f"Source reference {source_ref} cannot be resolved")
     
         try:
             load_commit(self.objects_dir(), target_hash)
