@@ -8,13 +8,13 @@ from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from typing import Concatenate
-
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
                         OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR)
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
-
+from libcaf.merge_algo import find_lca
+from enum import Enum, auto
 
 class RepositoryError(Exception):
     """Exception raised for repository-related errors."""
@@ -22,6 +22,11 @@ class RepositoryError(Exception):
 
 class RepositoryNotFoundError(RepositoryError):
     """Exception raised when a repository is not found."""
+
+class MergeResult(Enum):
+    UP_TO_DATE = auto()
+    FAST_FORWARD = auto()
+    MERGE_CREATED = auto()
 
 
 @dataclass
@@ -631,6 +636,44 @@ class Repository:
         """
         write_ref(self.head_file(), commit_ref)
 
+    @requires_repo
+    def merge(self, target_ref: Ref, source_ref: Ref) -> tuple[MergeResult, HashRef]:
+        """
+        Merges the source_branch into target_branch.
+        """
+        target_hash = self.resolve_ref(target_ref)
+        source_hash = self.resolve_ref(source_ref)
+
+        if target_hash is None:
+            raise RefError(f"Target reference {target_ref} cannot be resolved")
+        if source_hash is None:
+            raise RefError(f"Source reference {source_ref} cannot be resolved")
+    
+        try:
+            load_commit(self.objects_dir(), target_hash)
+        except Exception:
+            raise RepositoryError(f"Target commit {target_hash} not found or invalid")
+
+        try:
+            load_commit(self.objects_dir(), source_hash)
+        except Exception:
+            raise RepositoryError(f"Source commit {source_hash} not found or invalid")
+
+        lca = find_lca(self.objects_dir(), target_hash, source_hash)
+
+        if lca is None:
+             raise NotImplementedError("Unrelated histories is not supportedS")
+
+        if lca == source_hash:
+             return MergeResult.UP_TO_DATE, target_ref
+
+        if lca == target_hash:
+             return MergeResult.FAST_FORWARD, source_ref
+
+        #(TODO)
+        raise NotImplementedError("3-way merge not implemented yet")
+    
+  
 
 def branch_ref(branch: str) -> SymRef:
     """Create a symbolic reference for a branch name.
