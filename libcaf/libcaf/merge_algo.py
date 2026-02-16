@@ -1,10 +1,10 @@
-from typing import Set, Optional
 from collections import deque
 from pathlib import Path
-from libcaf.repository import Repository, load_commit, TreeRecordType, TreeRecord
 from enum import Enum, auto
 from dataclasses import dataclass, field
-from libcaf.plumbing import load_tree
+from typing import Optional
+from libcaf import TreeRecordType, TreeRecord
+from libcaf.plumbing import load_tree, load_commit
 
 
 def find_lca(repo_objects_dir: Path, hash_a: str, hash_b: str) -> Optional[str]:
@@ -18,7 +18,7 @@ def find_lca(repo_objects_dir: Path, hash_a: str, hash_b: str) -> Optional[str]:
         return hash_a
 
     # 1. Collect all ancestors of A
-    ancestors_a: Set[str] = set()
+    ancestors_a: set[str] = set()
     stack = [hash_a]
     
     while stack:
@@ -33,7 +33,7 @@ def find_lca(repo_objects_dir: Path, hash_a: str, hash_b: str) -> Optional[str]:
     # 2. Walk up B's history and look for the first match in A's set
     # Using a BFS here ensures we find the "closest" ancestor first
     queue = deque([hash_b])
-    visited_b: Set[str] = set()
+    visited_b: set[str] = set()
 
     while queue:
         current = queue.popleft() # FIFO for BFS (closest first)
@@ -75,7 +75,7 @@ class MergeNode:
     children: list["MergeNode"] = field(default_factory=list)
 
 
-def resolve_merge_tree(repo: Repository, base_tree_hash: str, ours_tree_hash: str, theirs_tree_hash: str) -> MergeNode:
+def resolve_merge_tree(repo_objects_dir: Path, base_tree_hash: str, ours_tree_hash: str, theirs_tree_hash: str) -> MergeNode:
     """
     Entry point to generate the intermediate Merge Tree for the 3-way merge.
     """
@@ -84,11 +84,11 @@ def resolve_merge_tree(repo: Repository, base_tree_hash: str, ours_tree_hash: st
     ours_rec = TreeRecord(TreeRecordType.TREE, ours_tree_hash, "")
     theirs_rec = TreeRecord(TreeRecordType.TREE, theirs_tree_hash, "")
 
-    return _build_merge_node_recursive(repo, "", base_rec, ours_rec, theirs_rec)
+    return _build_merge_node_recursive(repo_objects_dir, "", base_rec, ours_rec, theirs_rec)
 
 
 def _build_merge_node_recursive(
-    repo: Repository, 
+    repo_objects_dir: Path, 
     name: str,
     base_rec: Optional[TreeRecord],
     ours_rec: Optional[TreeRecord],
@@ -115,6 +115,7 @@ def _build_merge_node_recursive(
             node.action = MergeAction.DELETE
         else:
             node.action = MergeAction.TAKE_OURS
+            assert ours_rec is not None
             node.record_type = ours_rec.type
         return node
 
@@ -124,6 +125,7 @@ def _build_merge_node_recursive(
             node.action = MergeAction.DELETE
         else:
             node.action = MergeAction.TAKE_THEIRS
+            assert theirs_rec is not None
             node.record_type = theirs_rec.type
         return node
 
@@ -132,6 +134,7 @@ def _build_merge_node_recursive(
             node.action = MergeAction.DELETE
         else:
             node.action = MergeAction.TAKE_OURS
+            assert ours_rec is not None
             node.record_type = ours_rec.type
         return node
 
@@ -142,6 +145,8 @@ def _build_merge_node_recursive(
         node.action = MergeAction.CONFLICT
         node.conflict_type = ConflictType.MODIFY_DELETE
         return node
+
+    assert ours_rec is not None and theirs_rec is not None
 
     # Case B: Type mismatch (e.g., File vs. Directory)
     if ours_rec.type != theirs_rec.type:
@@ -160,9 +165,9 @@ def _build_merge_node_recursive(
         node.action = MergeAction.MERGE_DIRECTORY
         
         # Load the actual tree objects from the database
-        tree_base = load_tree(repo.objects_dir(), b_hash) if b_hash else None
-        tree_ours = load_tree(repo.objects_dir(), o_hash)
-        tree_theirs = load_tree(repo.objects_dir(), t_hash)
+        tree_base = load_tree(repo_objects_dir, b_hash) if b_hash else None
+        tree_ours = load_tree(repo_objects_dir, o_hash)
+        tree_theirs = load_tree(repo_objects_dir, t_hash)
 
         # Get dictionaries of child records
         base_children = tree_base.records if tree_base else {}
@@ -175,7 +180,7 @@ def _build_merge_node_recursive(
         # Sort alphabetically to be deterministic
         for child_name in sorted(all_child_names):
             child_node = _build_merge_node_recursive(
-                repo, 
+                repo_objects_dir, 
                 child_name,
                 base_children.get(child_name),
                 ours_children.get(child_name),
