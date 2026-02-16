@@ -662,13 +662,13 @@ class Repository:
         lca = find_lca(self.objects_dir(), target_hash, source_hash)
 
         if lca is None:
-             raise NotImplementedError("Unrelated histories is not supportedS")
+             raise NotImplementedError("Unrelated histories is not supported")
 
         if lca == source_hash:
-             return MergeResult.UP_TO_DATE, target_ref
+             return MergeResult.UP_TO_DATE, target_hash
 
         if lca == target_hash:
-             return MergeResult.FAST_FORWARD, source_ref
+             return MergeResult.FAST_FORWARD, source_hash
 
         #(TODO)
         raise NotImplementedError("3-way merge not implemented yet")
