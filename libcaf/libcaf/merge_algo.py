@@ -1,9 +1,8 @@
 from collections import deque
 from pathlib import Path
-from enum import Enum, auto
-from dataclasses import dataclass, field
-from typing import Optional
-from libcaf import TreeRecordType, TreeRecord
+from dataclasses import dataclass
+from typing import Optional, Dict, Union, Tuple
+from . import TreeRecordType, TreeRecord
 from libcaf.plumbing import load_tree, load_commit
 
 
@@ -51,143 +50,70 @@ def find_lca(repo_objects_dir: Path, hash_a: str, hash_b: str) -> Optional[str]:
     return None # No common ancestor found (orphan branches)
 
 
-class MergeAction(Enum):
-    TAKE_OURS = auto()         # Changed only in ours (or identical in both)
-    TAKE_THEIRS = auto()       # Changed only in theirs
-    MERGE_CONTENT = auto()     # File changed differently in both (Needs merge3 for text)
-    MERGE_DIRECTORY = auto()   # Directory changed in both, need to recurse into its children
-    CONFLICT = auto()          # Structural conflict (cannot be auto-merged)
-    DELETE = auto()            # Deleted in one side and unchanged in the other, or deleted in both
+@dataclass(frozen=True)
+class MergeConflict:
+    """An immutable record of a conflict to be resolved by the execution engine."""
+    base_hash: Optional[str]
+    ours_hash: Optional[str]
+    theirs_hash: Optional[str]
+    conflict_type: str  # "content", "modify/delete", or "type"
 
-class ConflictType(Enum):
-    MODIFY_DELETE = auto()     # One side modified the file, the other side deleted it
-    FILE_DIR = auto()          # One side made it a file, the other made it a directory
-    
-@dataclass
-class MergeNode:
-    name: str
-    action: MergeAction
-    record_type: Optional[TreeRecordType] = None
-    base_hash: Optional[str] = None
-    ours_hash: Optional[str] = None
-    theirs_hash: Optional[str] = None
-    conflict_type: Optional[ConflictType] = None
-    children: list["MergeNode"] = field(default_factory=list)
+MergeResult = Dict[str, Union[Tuple[str, TreeRecordType], MergeConflict, dict]]
 
 
-def resolve_merge_tree(repo_objects_dir: Path, base_tree_hash: str, ours_tree_hash: str, theirs_tree_hash: str) -> MergeNode:
+def merge_trees(repo_dir: Path, base_hash: Optional[str], ours_hash: Optional[str], theirs_hash: Optional[str]) -> MergeResult:
     """
-    Entry point to generate the intermediate Merge Tree for the 3-way merge.
+    Compares three trees and returns the NEW directory structure.
+    Recursively handles sub-directories.
     """
-    # Create fake root records to kick off the recursion
-    base_rec = TreeRecord(TreeRecordType.TREE, base_tree_hash, "") if base_tree_hash else None
-    ours_rec = TreeRecord(TreeRecordType.TREE, ours_tree_hash, "")
-    theirs_rec = TreeRecord(TreeRecordType.TREE, theirs_tree_hash, "")
+    # 1. Load the three tree dictionaries (Path -> Hash)
+    # (Helper function 'load_tree_dict' returns {} if hash is None)
+    result = {}
+    base_tree = load_tree_dict(repo_dir, base_hash)
+    ours_tree = load_tree_dict(repo_dir, ours_hash)
+    theirs_tree = load_tree_dict(repo_dir, theirs_hash)
 
-    return _build_merge_node_recursive(repo_objects_dir, "", base_rec, ours_rec, theirs_rec)
+    all_paths = sorted(set(base_tree) | set(ours_tree) | set(theirs_tree))
 
+    for path in all_paths:
+        b_hash, _ = base_tree.get(path, (None, None))
+        o_hash, o_type = ours_tree.get(path, (None, None))
+        t_hash, t_type = theirs_tree.get(path, (None, None))
 
-def _build_merge_node_recursive(
-    repo_objects_dir: Path, 
-    name: str,
-    base_rec: Optional[TreeRecord],
-    ours_rec: Optional[TreeRecord],
-    theirs_rec: Optional[TreeRecord]
-) -> MergeNode:
-    """
-    Recursively compares TreeRecords from Base, Ours, and Theirs, and decides the MergeAction.
-    """
-    b_hash = base_rec.hash if base_rec else None
-    o_hash = ours_rec.hash if ours_rec else None
-    t_hash = theirs_rec.hash if theirs_rec else None
-
-    node = MergeNode(
-        name=name, 
-        action=MergeAction.CONFLICT, # Default, overridden below
-        base_hash=b_hash, 
-        ours_hash=o_hash, 
-        theirs_hash=t_hash
-    )
-
-    # 1. Identical changes in both branches (or no change)
-    if o_hash == t_hash:
-        if o_hash is None:
-            node.action = MergeAction.DELETE
-        else:
-            node.action = MergeAction.TAKE_OURS
-            assert ours_rec is not None
-            node.record_type = ours_rec.type
-        return node
-
-    # 2. Fast-forward cases (Only one side changed it)
-    if o_hash == b_hash:  # We didn't touch it, but they did
-        if t_hash is None:
-            node.action = MergeAction.DELETE
-        else:
-            node.action = MergeAction.TAKE_THEIRS
-            assert theirs_rec is not None
-            node.record_type = theirs_rec.type
-        return node
-
-    if t_hash == b_hash:  # They didn't touch it, but we did
-        if o_hash is None:
-            node.action = MergeAction.DELETE
-        else:
-            node.action = MergeAction.TAKE_OURS
-            assert ours_rec is not None
-            node.record_type = ours_rec.type
-        return node
-
-    # --- 3. True Divergence (Both changed it differently) ---
-
-    # Case A: One side modified, the other deleted
-    if o_hash is None or t_hash is None:
-        node.action = MergeAction.CONFLICT
-        node.conflict_type = ConflictType.MODIFY_DELETE
-        return node
-
-    assert ours_rec is not None and theirs_rec is not None
-
-    # Case B: Type mismatch (e.g., File vs. Directory)
-    if ours_rec.type != theirs_rec.type:
-        node.action = MergeAction.CONFLICT
-        node.conflict_type = ConflictType.FILE_DIR
-        return node
-
-    # Case C: Both are Files (Blobs) -> Needs content merge!
-    node.record_type = ours_rec.type
-    if ours_rec.type == TreeRecordType.BLOB:
-        node.action = MergeAction.MERGE_CONTENT
-        return node
-
-    # Case D: Both are Directories (Trees) -> Recurse!
-    if ours_rec.type == TreeRecordType.TREE:
-        node.action = MergeAction.MERGE_DIRECTORY
+         #case 1: fast forward or identical     
+        if o_hash == t_hash:
+            if o_hash:
+                result[path] = (o_hash, o_type)
         
-        # Load the actual tree objects from the database
-        tree_base = load_tree(repo_objects_dir, b_hash) if b_hash else None
-        tree_ours = load_tree(repo_objects_dir, o_hash)
-        tree_theirs = load_tree(repo_objects_dir, t_hash)
+        elif b_hash == o_hash:
+            if t_hash:
+                result[path] = (t_hash, t_type)
+        
+        elif b_hash == t_hash:
+            if o_hash:
+                result[path] = (o_hash, o_type)
 
-        # Get dictionaries of child records
-        base_children = tree_base.records if tree_base else {}
-        ours_children = tree_ours.records if tree_ours else {}
-        theirs_children = tree_theirs.records if tree_theirs else {}
+        #case 2: both dirs, need to recurse
+        elif o_type == t_type == TreeRecordType.TREE:            
+            sub_result = merge_trees(repo_dir, b_hash, o_hash, t_hash)
+            result[path] = sub_result
+       
+        #case 3: content conflict
+        else:
+            # categorize the conflict type
+            if o_hash is None or t_hash is None:
+                conflict_type = "modify/delete"
+            elif o_type != t_type:
+                conflict_type = "type"
+            else:
+                conflict_type = "content"
+            result[path] = MergeConflict(b_hash, o_hash, t_hash, conflict_type)
 
-        # Union of all unique child names from all three trees
-        all_child_names = set(base_children.keys()) | set(ours_children.keys()) | set(theirs_children.keys())
-
-        # Sort alphabetically to be deterministic
-        for child_name in sorted(all_child_names):
-            child_node = _build_merge_node_recursive(
-                repo_objects_dir, 
-                child_name,
-                base_children.get(child_name),
-                ours_children.get(child_name),
-                theirs_children.get(child_name)
-            )
-            node.children.append(child_node)
-
-        return node
+    return result
     
-    raise NotImplementedError(f"Unsupported tree record type: {ours_rec.type}")
+def load_tree_dict(repo_dir: Path, tree_hash: Optional[str]) -> Dict[str, tuple[str, TreeRecordType]]:
+    """Helper to load a tree and return a dict of name -> hash. Returns {} if tree_hash is None."""
+    if tree_hash is None:
+        return {}
+    tree = load_tree(repo_dir, tree_hash)
+    return {rec.name: (rec.hash, rec.type) for rec in tree.records.values()}

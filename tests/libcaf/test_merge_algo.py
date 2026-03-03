@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 
 from libcaf import Tree, TreeRecord, TreeRecordType
-from libcaf.merge_algo import resolve_merge_tree, MergeAction, ConflictType
+from libcaf.merge_algo import merge_trees, MergeConflict
 
 
 @pytest.fixture
@@ -22,25 +22,27 @@ def mock_repo(monkeypatch: pytest.MonkeyPatch) -> dict[str, Tree]:
     return fake_db
 
 
-def test_identical_roots() -> None:
-    node = resolve_merge_tree(Path("fake"), "base_hash", "base_hash", "base_hash")
+
+def test_identical_roots(mock_repo: dict[str, Tree]) -> None:
+    mock_repo["base_root"] = Tree({"file.txt": TreeRecord(TreeRecordType.BLOB, "h1", "file.txt")})
+    result = merge_trees(Path("fake"), "base_root", "base_root", "base_root")
+    assert result == {"file.txt": ("h1", TreeRecordType.BLOB)}
+
+
+def test_fast_forward_ours_root(mock_repo: dict[str, Tree]) -> None:
+    mock_repo["base_root"] = Tree({"file.txt": TreeRecord(TreeRecordType.BLOB, "h1", "file.txt")})
+    mock_repo["ours_root"] = Tree({"file.txt": TreeRecord(TreeRecordType.BLOB, "h2", "file.txt")})
+    result = merge_trees(Path("fake"), "base_root", "ours_root", "base_root")
     
-    assert node.action == MergeAction.TAKE_OURS
-    assert node.children == []
+    assert result == {"file.txt": ("h2", TreeRecordType.BLOB)}
 
 
-def test_fast_forward_ours_root() -> None:
-    node = resolve_merge_tree(Path("fake"), "base_hash", "ours_hash", "base_hash")
+def test_fast_forward_theirs_root(mock_repo: dict[str, Tree]) -> None:
+    mock_repo["base_root"] = Tree({"file.txt": TreeRecord(TreeRecordType.BLOB, "h1", "file.txt")})
+    mock_repo["theirs_root"] = Tree({"file.txt": TreeRecord(TreeRecordType.BLOB, "h2", "file.txt")})
+    result = merge_trees(Path("fake"), "base_root", "base_root", "theirs_root")
     
-    assert node.action == MergeAction.TAKE_OURS
-    assert node.children == []
-
-
-def test_fast_forward_theirs_root() -> None:
-    node = resolve_merge_tree(Path("fake"), "base_hash", "base_hash", "theirs_hash")
-    
-    assert node.action == MergeAction.TAKE_THEIRS
-    assert node.children == []
+    assert result == {"file.txt": ("h2", TreeRecordType.BLOB)}
 
 
 def test_mutual_deletion(mock_repo: dict[str, Tree]) -> None:
@@ -48,14 +50,9 @@ def test_mutual_deletion(mock_repo: dict[str, Tree]) -> None:
     mock_repo["ours_root"] = Tree({})
     mock_repo["theirs_root"] = Tree({})
 
-    root_node = resolve_merge_tree(Path("fake"), "base_root", "ours_root", "theirs_root")
+    result = merge_trees(Path("fake"), "base_root", "ours_root", "theirs_root")
     
-    assert root_node.action == MergeAction.MERGE_DIRECTORY
-    assert len(root_node.children) == 1
-    
-    child = root_node.children[0]
-    assert child.name == "file.txt"
-    assert child.action == MergeAction.DELETE
+    assert result == {}
 
 
 def test_content_conflict(mock_repo: dict[str, Tree]) -> None:
@@ -63,18 +60,11 @@ def test_content_conflict(mock_repo: dict[str, Tree]) -> None:
     mock_repo["ours_root"] = Tree({"file.txt": TreeRecord(TreeRecordType.BLOB, "h2", "file.txt")})
     mock_repo["theirs_root"] = Tree({"file.txt": TreeRecord(TreeRecordType.BLOB, "h3", "file.txt")})
 
-    root_node = resolve_merge_tree(Path("fake"), "base_root", "ours_root", "theirs_root")
+    result = merge_trees(Path("fake"), "base_root", "ours_root", "theirs_root")
+
+    assert result == {"file.txt": MergeConflict("h1", "h2", "h3", "content")}
     
-    assert root_node.action == MergeAction.MERGE_DIRECTORY
-    assert len(root_node.children) == 1
-    
-    child = root_node.children[0]
-    assert child.name == "file.txt"
-    assert child.action == MergeAction.MERGE_CONTENT
-    assert child.record_type == TreeRecordType.BLOB
-    assert child.base_hash == "h1"
-    assert child.ours_hash == "h2"
-    assert child.theirs_hash == "h3"
+   
 
 
 def test_modify_delete_conflict(mock_repo: dict[str, Tree]) -> None:
@@ -82,12 +72,9 @@ def test_modify_delete_conflict(mock_repo: dict[str, Tree]) -> None:
     mock_repo["ours_root"] = Tree({"file.txt": TreeRecord(TreeRecordType.BLOB, "h2", "file.txt")})
     mock_repo["theirs_root"] = Tree({})
 
-    root_node = resolve_merge_tree(Path("fake"), "base_root", "ours_root", "theirs_root")
+    result = merge_trees(Path("fake"), "base_root", "ours_root", "theirs_root")
     
-    child = root_node.children[0]
-    assert child.name == "file.txt"
-    assert child.action == MergeAction.CONFLICT
-    assert child.conflict_type == ConflictType.MODIFY_DELETE
+    assert result == {"file.txt": MergeConflict("h1", "h2", None, "modify/delete")}
 
 
 def test_file_dir_conflict(mock_repo: dict[str, Tree]) -> None:
@@ -95,12 +82,9 @@ def test_file_dir_conflict(mock_repo: dict[str, Tree]) -> None:
     mock_repo["ours_root"] = Tree({"logger": TreeRecord(TreeRecordType.BLOB, "h_file", "logger")})
     mock_repo["theirs_root"] = Tree({"logger": TreeRecord(TreeRecordType.TREE, "h_dir", "logger")})
 
-    root_node = resolve_merge_tree(Path("fake"), "base_root", "ours_root", "theirs_root")
+    result = merge_trees(Path("fake"), "base_root", "ours_root", "theirs_root")
     
-    child = root_node.children[0]
-    assert child.name == "logger"
-    assert child.action == MergeAction.CONFLICT
-    assert child.conflict_type == ConflictType.FILE_DIR
+    assert result == {"logger": MergeConflict(None, "h_file", "h_dir", "type")}
 
 
 def test_directory_recursion(mock_repo: dict[str, Tree]) -> None:
@@ -121,17 +105,6 @@ def test_directory_recursion(mock_repo: dict[str, Tree]) -> None:
     mock_repo["ours_root"] = Tree({"src": TreeRecord(TreeRecordType.TREE, "ours_src", "src")})
     mock_repo["theirs_root"] = Tree({"src": TreeRecord(TreeRecordType.TREE, "theirs_src", "src")})
 
-    root_node = resolve_merge_tree(Path("fake"), "base_root", "ours_root", "theirs_root")
-    
-    assert root_node.action == MergeAction.MERGE_DIRECTORY
-    
-    src_node = root_node.children[0]
-    assert src_node.name == "src"
-    assert src_node.action == MergeAction.MERGE_DIRECTORY
-    assert len(src_node.children) == 2
-    
-    a_node = next(c for c in src_node.children if c.name == "a.txt")
-    b_node = next(c for c in src_node.children if c.name == "b.txt")
-    
-    assert a_node.action == MergeAction.TAKE_OURS
-    assert b_node.action == MergeAction.TAKE_THEIRS
+    result = merge_trees(Path("fake"), "base_root", "ours_root", "theirs_root")
+
+    assert result == {"src": {"a.txt": ("h_a_mod", TreeRecordType.BLOB), "b.txt": ("h_b_mod", TreeRecordType.BLOB)}}
