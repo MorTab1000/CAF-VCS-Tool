@@ -1,8 +1,8 @@
 from collections import deque
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Dict, Union, Tuple
-from . import TreeRecordType, TreeRecord
+from typing import Optional, Dict, Union, Tuple, Callable
+from . import TreeRecordType, Tree, TreeRecord
 from libcaf.plumbing import load_tree, load_commit
 
 
@@ -58,10 +58,10 @@ class MergeConflict:
     theirs_hash: Optional[str]
     conflict_type: str  # "content", "modify/delete", or "type"
 
-MergeResult = Dict[str, Union[Tuple[str, TreeRecordType], MergeConflict, dict]]
+MergeResult = Dict[str, Union[TreeRecord, MergeConflict, dict]]
 
 
-def merge_trees(repo_dir: Path, base_hash: Optional[str], ours_hash: Optional[str], theirs_hash: Optional[str]) -> MergeResult:
+def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash: Optional[str], fetch_tree: Callable[[str], Tree]) -> MergeResult:
     """
     Compares three trees and returns the NEW directory structure.
     Recursively handles sub-directories.
@@ -69,34 +69,34 @@ def merge_trees(repo_dir: Path, base_hash: Optional[str], ours_hash: Optional[st
     # 1. Load the three tree dictionaries (Path -> Hash)
     # (Helper function 'load_tree_dict' returns {} if hash is None)
     result = {}
-    base_tree = load_tree_dict(repo_dir, base_hash)
-    ours_tree = load_tree_dict(repo_dir, ours_hash)
-    theirs_tree = load_tree_dict(repo_dir, theirs_hash)
+    base_records = fetch_tree(base_hash).records if base_hash else {}
+    ours_records = fetch_tree(ours_hash).records if ours_hash else {}
+    theirs_records = fetch_tree(theirs_hash).records if theirs_hash else {}
 
-    all_paths = sorted(set(base_tree) | set(ours_tree) | set(theirs_tree))
+    all_paths = sorted(set(base_records) | set(ours_records) | set(theirs_records))
 
     for path in all_paths:
-        b_hash, _ = base_tree.get(path, (None, None))
-        o_hash, o_type = ours_tree.get(path, (None, None))
-        t_hash, t_type = theirs_tree.get(path, (None, None))
+        b_rec, o_rec, t_rec = base_records.get(path), ours_records.get(path), theirs_records.get(path)
+        b_hash = b_rec.hash if b_rec else None
+        o_hash, o_type = (o_rec.hash, o_rec.type) if o_rec else (None, None)
+        t_hash, t_type = (t_rec.hash, t_rec.type) if t_rec else (None, None)         
 
          #case 1: fast forward or identical     
         if o_hash == t_hash:
             if o_hash:
-                result[path] = (o_hash, o_type)
+                result[path] = o_rec
         
         elif b_hash == o_hash:
             if t_hash:
-                result[path] = (t_hash, t_type)
+                result[path] = t_rec
         
         elif b_hash == t_hash:
             if o_hash:
-                result[path] = (o_hash, o_type)
+                result[path] = o_rec
 
         #case 2: both dirs, need to recurse
         elif o_type == t_type == TreeRecordType.TREE:            
-            sub_result = merge_trees(repo_dir, b_hash, o_hash, t_hash)
-            result[path] = sub_result
+            result[path] = merge_trees(b_hash, o_hash, t_hash, fetch_tree)
        
         #case 3: content conflict
         else:
