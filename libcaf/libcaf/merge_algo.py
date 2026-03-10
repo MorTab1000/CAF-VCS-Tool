@@ -1,10 +1,10 @@
 from collections import deque
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Dict, Union, Tuple, Callable
+from typing import Optional, Dict, Union, Tuple, Callable, List
 from . import TreeRecordType, Tree, TreeRecord
-from libcaf.plumbing import load_tree, load_commit
-
+from libcaf.plumbing import save_tree, load_commit, hash_object
+import os
 
 def find_lca(repo_objects_dir: Path, hash_a: str, hash_b: str) -> Optional[str]:
     """
@@ -111,9 +111,76 @@ def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash:
 
     return result
     
-def load_tree_dict(repo_dir: Path, tree_hash: Optional[str]) -> Dict[str, tuple[str, TreeRecordType]]:
-    """Helper to load a tree and return a dict of name -> hash. Returns {} if tree_hash is None."""
-    if tree_hash is None:
-        return {}
-    tree = load_tree(repo_dir, tree_hash)
-    return {rec.name: (rec.hash, rec.type) for rec in tree.records.values()}
+
+def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str]]:
+
+    records = {}
+    conflicts = []
+    auto_merged = {}
+    computed_hashes = {}
+    stack = [(("", merge_result, False))] # Stack stores: (current path, dictionary to process, visited flag)
+    objects_dir = repo_dir / ".caf" / "objects"
+    while stack:
+        current_path, current_dict, visited = stack.pop()
+
+        if not visited:
+            stack.append((current_path, current_dict, True))
+            # Find all sub-directories and push them onto the stack to process them first
+            for name, value in current_dict.items():
+                if isinstance(value, dict):
+                    full_path = f"{current_path}/{name}" if current_path else name
+                    stack.append((full_path, value, False))
+        else:
+            records = {}
+            has_conflict_in_dir = False
+            
+            for name, value in current_dict.items():
+                full_path = f"{current_path}/{name}" if current_path else name
+                
+                if isinstance(value, TreeRecord):
+                    records[name] = value
+                elif isinstance(value, dict):
+                    if not full_path in computed_hashes:
+                        has_conflict_in_dir = True
+                    else:
+                        records[name] = TreeRecord(TreeRecordType.TREE, computed_hashes[full_path], name)
+                elif isinstance(value, MergeConflict):
+                    if value.conflict_type == "content":
+                        if is_binary_blob(objects_dir / value.ours_hash) or is_binary_blob(objects_dir / value.theirs_hash):
+                            # For binary files, we can't auto-merge, so we just record the conflict
+                            conflicts.append((full_path, value))
+                        else:
+                            merged_hash = three_way_merge(repo_dir, value)
+                            if merged_hash:
+                                records[name] = TreeRecord(TreeRecordType.BLOB, merged_hash, name)
+                                auto_merged[full_path] = merged_hash
+                            else:
+                                conflicts.append((full_path, value))
+                                has_conflict_in_dir = True
+                    else:
+                        conflicts.append((full_path, value))
+                        has_conflict_in_dir = True
+            if not has_conflict_in_dir:
+                # If there are no conflicts in this directory, we can save it immediately
+                tree = Tree(records)
+                save_tree(objects_dir, tree)
+                computed_hashes[current_path] = hash_object(tree)
+            
+    if conflicts:
+        return None, conflicts, auto_merged
+    
+    return computed_hashes.get(""), [], auto_merged # Return the hash of the root tree if no conflicts
+
+
+def three_way_merge(repo_dir: Path, conflict: MergeConflict) -> Optional[str]:
+    """
+    Resolves a content conflict by writing the three versions to disk and returning a new hash.
+    """
+    pass
+
+def is_binary_blob(blob_path: Path) -> bool:
+    """
+    Helper function to determine if a blob is binary (for content conflicts).
+    """
+    pass
+    
