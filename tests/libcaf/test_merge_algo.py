@@ -1,6 +1,9 @@
 
 from libcaf import Tree, TreeRecord, TreeRecordType
-from libcaf.merge_algo import merge_trees, MergeConflict
+from libcaf.plumbing import load_tree
+from libcaf.repository import Repository
+from libcaf.merge_algo import merge_trees, MergeConflict, execute_merge
+from pathlib import Path
 
 
 
@@ -102,3 +105,77 @@ def test_directory_recursion() -> None:
     result = merge_trees("base_root", "ours_root", "theirs_root", lambda h: fake_db[h])
 
     assert result == {"src": {"a.txt": TreeRecord(TreeRecordType.BLOB, "h_a_mod", "a.txt"), "b.txt": TreeRecord(TreeRecordType.BLOB, "h_b_mod", "b.txt")}}
+
+
+def test_execute_merge_clean_files(temp_repo: Repository) -> None:
+    plan = {
+    "main.py": TreeRecord(TreeRecordType.BLOB, "hash_main", "main.py"),
+    "README.md": TreeRecord(TreeRecordType.BLOB, "hash_readme", "README.md")
+    }
+
+    new_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, plan)
+    
+    assert new_tree_hash is not None
+    assert conflicts == []
+    assert auto_merged == {}
+
+    folder_prefix = new_tree_hash[:2]
+    
+    assert (temp_repo.objects_dir() / folder_prefix / new_tree_hash).exists()
+
+def test_execute_merge_nested_directories(temp_repo: Repository) -> None:
+    plan = {
+        "README.md": TreeRecord(TreeRecordType.BLOB, "hash_readme", "README.md"),
+        "src": {
+            "main.py": TreeRecord(TreeRecordType.BLOB, "hash_main", "main.py"),
+            "utils.py": TreeRecord(TreeRecordType.BLOB, "hash_utils", "utils.py")
+        }
+    }
+
+    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, plan)
+
+    assert root_tree_hash is not None
+    assert conflicts == []
+    assert auto_merged == {}
+    
+    root_folder_prefix = root_tree_hash[:2]
+    assert (temp_repo.objects_dir() / root_folder_prefix / root_tree_hash).exists()
+    
+    new_tree = load_tree(temp_repo.objects_dir(), root_tree_hash)
+    src_record = new_tree.records.get("src")
+    assert src_record is not None and src_record.type == TreeRecordType.TREE
+
+    src_tree_hash = src_record.hash
+    src_folder_prefix = src_tree_hash[:2]
+    assert (temp_repo.objects_dir() / src_folder_prefix / src_tree_hash).exists()
+
+
+def test_execute_merge_with_structural_conflict(temp_repo: Repository) -> None:
+    conflict_obj = MergeConflict(
+        conflict_type="modify/delete", 
+        base_hash="hash_base", 
+        ours_hash="hash_ours", 
+        theirs_hash=None)
+    plan = {
+        "clean_file.txt": TreeRecord(TreeRecordType.BLOB, "hash_clean", "clean_file.txt"),
+        "nested": {
+            "broken_file.txt": conflict_obj
+        }
+    }
+    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, plan)
+
+    assert root_tree_hash is None
+    assert conflicts == [("nested/broken_file.txt", conflict_obj)]
+    assert auto_merged == {}
+
+
+def test_execute_merge_empty_plan(temp_repo: Repository) -> None:
+    plan = {}
+    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, plan)
+
+    assert root_tree_hash is not None
+    assert len(conflicts) == 0
+    assert len(auto_merged) == 0
+    
+    root_folder_prefix = root_tree_hash[:2]
+    assert (temp_repo.objects_dir() / root_folder_prefix / root_tree_hash).exists()
