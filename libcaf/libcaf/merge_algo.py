@@ -114,6 +114,7 @@ def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash:
 
 def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str]]:
 
+
     records = {}
     conflicts = []
     auto_merged = {}
@@ -122,6 +123,7 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
     objects_dir = repo_dir / ".caf" / "objects"
     while stack:
         current_path, current_dict, visited = stack.pop()
+
 
         if not visited:
             stack.append((current_path, current_dict, True))
@@ -133,10 +135,10 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
         else:
             records = {}
             has_conflict_in_dir = False
-            
+           
             for name, value in current_dict.items():
                 full_path = f"{current_path}/{name}" if current_path else name
-                
+               
                 if isinstance(value, TreeRecord):
                     records[name] = value
                 elif isinstance(value, dict):
@@ -146,17 +148,14 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
                         records[name] = TreeRecord(TreeRecordType.TREE, computed_hashes[full_path], name)
                 elif isinstance(value, MergeConflict):
                     if value.conflict_type == "content":
-                        if is_binary_blob(objects_dir / value.ours_hash) or is_binary_blob(objects_dir / value.theirs_hash):
+                        if is_binary_blob(objects_dir / value.ours_hash[:2] / value.ours_hash) or is_binary_blob(objects_dir / value.theirs_hash[:2] / value.theirs_hash):
                             # For binary files, we can't auto-merge, so we just record the conflict
                             conflicts.append((full_path, value))
+                            has_conflict_in_dir = True
                         else:
-                            merged_hash = three_way_merge(repo_dir, value)
-                            if merged_hash:
-                                records[name] = TreeRecord(TreeRecordType.BLOB, merged_hash, name)
-                                auto_merged[full_path] = merged_hash
-                            else:
-                                conflicts.append((full_path, value))
-                                has_conflict_in_dir = True
+                           #TODO: Complete three way merge
+                            pass
+                               
                     else:
                         conflicts.append((full_path, value))
                         has_conflict_in_dir = True
@@ -165,11 +164,13 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
                 tree = Tree(records)
                 save_tree(objects_dir, tree)
                 computed_hashes[current_path] = hash_object(tree)
-            
+   
+    root_hash = computed_hashes.get("")
     if conflicts:
-        return None, conflicts, auto_merged
-    
-    return computed_hashes.get(""), [], auto_merged # Return the hash of the root tree if no conflicts
+        return root_hash, conflicts, auto_merged
+   
+    return root_hash, [], auto_merged # Return the hash of the root tree if no conflicts
+
 
 
 def three_way_merge(repo_dir: Path, conflict: MergeConflict) -> Optional[str]:
