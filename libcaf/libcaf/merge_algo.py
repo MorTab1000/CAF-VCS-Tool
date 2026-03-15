@@ -1,10 +1,10 @@
 from collections import deque
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Dict, Union, Tuple, Callable, List
+from typing import Optional, Dict, Union, Tuple, Callable
 from . import TreeRecordType, Tree, TreeRecord
 from libcaf.plumbing import save_tree, load_commit, hash_object
-import os
+
 
 def find_lca(repo_objects_dir: Path, hash_a: str, hash_b: str) -> Optional[str]:
     """
