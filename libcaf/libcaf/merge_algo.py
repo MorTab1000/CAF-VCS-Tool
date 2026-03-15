@@ -119,7 +119,7 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
     conflicts = []
     auto_merged = {}
     computed_hashes = {}
-    stack = [(("", merge_result, False))] # Stack stores: (current path, dictionary to process, visited flag)
+    stack = [((current_path, merge_result, False))] # Stack stores: (current path, dictionary to process, visited flag)
     objects_dir = repo_dir / ".caf" / "objects"
     while stack:
         current_path, current_dict, visited = stack.pop()
@@ -165,7 +165,7 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
                 save_tree(objects_dir, tree)
                 computed_hashes[current_path] = hash_object(tree)
    
-    root_hash = computed_hashes.get("")
+    root_hash = computed_hashes.get(current_path)
     if conflicts:
         return root_hash, conflicts, auto_merged
    
