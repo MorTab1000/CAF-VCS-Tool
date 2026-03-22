@@ -115,13 +115,12 @@ def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash:
     return result
     
 
-def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str]]:
+def execute_merge(repo_dir: Path, objects_dir: Path, merge_result: MergeResult, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str]]:
     records = {}
     conflicts = []
     auto_merged = {}
     computed_hashes = {}
     stack = [(("", merge_result, False))] # Stack stores: (current path, dictionary to process, visited flag)
-    objects_dir = repo_dir / ".caf" / "objects"
     while stack:
         current_path, current_dict, visited = stack.pop()
 

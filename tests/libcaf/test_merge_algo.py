@@ -148,7 +148,7 @@ def test_execute_merge_clean_files(temp_repo: Repository) -> None:
     }
 
 
-    new_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, plan)
+    new_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, temp_repo.objects_dir(), plan)
    
     assert new_tree_hash is not None
     assert conflicts == []
@@ -170,7 +170,7 @@ def test_execute_merge_nested_directories(temp_repo: Repository) -> None:
     }
 
 
-    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, plan)
+    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, temp_repo.objects_dir(), plan)
 
 
     assert root_tree_hash is not None
@@ -204,7 +204,7 @@ def test_execute_merge_with_structural_conflict(temp_repo: Repository) -> None:
             "broken_file.txt": conflict_obj
         }
     }
-    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, plan)
+    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, temp_repo.objects_dir(), plan)
 
 
     assert root_tree_hash is None
@@ -223,7 +223,7 @@ def test_execute_merge_with_type_conflict(temp_repo: Repository) -> None:
     plan = {
         "conflict_item": conflict_obj
     }
-    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, plan)
+    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, temp_repo.objects_dir(), plan)
 
 
     assert root_tree_hash is None
@@ -233,7 +233,7 @@ def test_execute_merge_with_type_conflict(temp_repo: Repository) -> None:
 
 def test_execute_merge_empty_plan(temp_repo: Repository) -> None:
     plan = {}
-    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, plan)
+    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, temp_repo.objects_dir(), plan)
 
 
     assert root_tree_hash is not None
@@ -280,7 +280,7 @@ def test_execute_merge_complex_structure(temp_repo: Repository) -> None:
 
 
     # 3. Run the engine
-    root_hash, conflicts, auto_merged = execute_merge(repo_dir, merge_result)
+    root_hash, conflicts, auto_merged = execute_merge(repo_dir, temp_repo.objects_dir(), merge_result)
 
 
     # 4. Assertions
