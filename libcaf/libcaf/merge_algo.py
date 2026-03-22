@@ -183,5 +183,12 @@ def is_binary_blob(blob_path: Path) -> bool:
     """
     Helper function to determine if a blob is binary (for content conflicts).
     """
-    pass
+    try:
+        with open(blob_path, 'rb') as f:
+            chunk = f.read(8192)  # Read the first 8KB
+            return b'\x00' in chunk  # Simple heuristic: if there's a null byte, it's likely binary
+    except OSError:
+        raise IOError(f"Failed to read blob at {blob_path}")
+   
+
     
