@@ -1,9 +1,12 @@
 from collections import deque
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Dict, Union, Tuple, Callable
+from typing import Optional, Dict, Union, Tuple, Callable, Sequence, Generator
 from . import TreeRecordType, Tree, TreeRecord
-from libcaf.plumbing import save_tree, load_commit, hash_object
+from .plumbing import save_tree, load_commit, hash_object, save_file_content
+from contextlib import ExitStack
+from merge3 import Merge3
+from .sequences import prepare_lines_sequence
 
 
 def find_lca(repo_objects_dir: Path, hash_a: str, hash_b: str) -> Optional[str]:
@@ -173,11 +176,31 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
 
 
 
-def three_way_merge(repo_dir: Path, conflict: MergeConflict) -> Optional[str]:
+def three_way_merge(
+    base_lines: Sequence[bytes],
+    ours_lines: Sequence[bytes],
+    theirs_lines: Sequence[bytes],
+    output_path: Path
+) -> bool:
     """
-    Resolves a content conflict by writing the three versions to disk and returning a new hash.
+    Performs a pure 3-way text merge in memory.
+    Returns a boolean indicating if the merge was clean
     """
-    pass
+    merger = TrackingMerge3(base_lines, ours_lines, theirs_lines)
+   
+    merged_generator = merger.merge_lines(
+        name_a=b"HEAD (ours)",
+        name_b=b"MERGE_HEAD (theirs)"
+    )
+
+
+    with open(output_path, 'wb') as f:
+        f.writelines(merged_generator)
+
+
+    is_clean = not merger.has_conflicts
+    return is_clean
+
 
 def is_binary_blob(blob_path: Path) -> bool:
     """
@@ -191,4 +214,20 @@ def is_binary_blob(blob_path: Path) -> bool:
         raise IOError(f"Failed to read blob at {blob_path}")
    
 
-    
+class TrackingMerge3(Merge3):
+    """
+    A lightweight wrapper around Merge3 that tracks if a conflict
+    was encountered during the merge generation process.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.has_conflicts = False
+
+
+    def merge_regions(self):
+        # We intercept the generator produced by the parent class
+        for region in super().merge_regions():
+            if region[0] == "conflict":
+                self.has_conflicts = True
+            # Yield it right back so merge_lines() can consume it normally!
+            yield region
