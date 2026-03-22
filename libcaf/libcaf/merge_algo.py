@@ -1,11 +1,11 @@
 from collections import deque
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Dict, Union, Tuple, Callable, Sequence, Generator
+from typing import Optional, Dict, Union, Tuple, Callable, Sequence, Iterator
 from . import TreeRecordType, Tree, TreeRecord
 from .plumbing import save_tree, load_commit, hash_object, save_file_content
 from contextlib import ExitStack
-from merge3 import Merge3
+from merge3 import Merge3, MergeRegion
 from .sequences import prepare_lines_sequence
 
 
@@ -237,7 +237,7 @@ class TrackingMerge3(Merge3):
         self.has_conflicts = False
 
 
-    def merge_regions(self):
+    def merge_regions(self) -> Iterator[MergeRegion]:
         # We intercept the generator produced by the parent class
         for region in super().merge_regions():
             if region[0] == "conflict":
