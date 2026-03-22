@@ -156,8 +156,17 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
                             conflicts.append((full_path, value))
                             has_conflict_in_dir = True
                         else:
-                           #TODO: Complete three way merge
-                            pass
+                           with ExitStack() as file_stack:                              
+                                base_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / value.base_hash[:2] / value.base_hash)) if value.base_hash else []
+                                ours_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / value.ours_hash[:2] / value.ours_hash))
+                                theirs_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / value.theirs_hash[:2] / value.theirs_hash))
+                                output_path = repo_dir / full_path
+                                output_path.parent.mkdir(parents=True, exist_ok=True)
+                                is_clean = three_way_merge(base_seq, ours_seq, theirs_seq, output_path)
+                                if is_clean:
+                                    merged_hash = hash_and_save_blob(objects_dir, repo_dir / full_path)
+                                    records[name] = TreeRecord(TreeRecordType.BLOB, merged_hash, name)
+                                    auto_merged[full_path] = merged_hash
                                
                     else:
                         conflicts.append((full_path, value))
@@ -212,6 +221,10 @@ def is_binary_blob(blob_path: Path) -> bool:
             return b'\x00' in chunk  # Simple heuristic: if there's a null byte, it's likely binary
     except OSError:
         raise IOError(f"Failed to read blob at {blob_path}")
+
+def hash_and_save_blob(objects_dir, file_path):
+    blob = save_file_content(objects_dir, file_path)
+    return blob.hash
    
 
 class TrackingMerge3(Merge3):
