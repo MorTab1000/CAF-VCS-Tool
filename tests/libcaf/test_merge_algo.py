@@ -2,7 +2,7 @@
 from libcaf import Tree, TreeRecord, TreeRecordType
 from libcaf.plumbing import load_tree
 from libcaf.repository import Repository
-from libcaf.merge_algo import merge_trees, MergeConflict, execute_merge
+from libcaf.merge_algo import merge_trees, MergeConflict, execute_merge, three_way_merge
 from pathlib import Path
 
 
@@ -179,3 +179,64 @@ def test_execute_merge_empty_plan(temp_repo: Repository) -> None:
     
     root_folder_prefix = root_tree_hash[:2]
     assert (temp_repo.objects_dir() / root_folder_prefix / root_tree_hash).exists()
+
+
+def test_three_way_merge_success(temp_repo_dir: Path) -> None:
+    """Test a clean merge where changes don't overlap."""
+    base = [b"A\n", b"B\n", b"C\n"]
+    ours = [b"A (ours)\n", b"B\n", b"C\n"]
+    theirs = [b"A\n", b"B\n", b"C (theirs)\n"]
+
+
+    output_path = temp_repo_dir / "merged_file.txt"
+   
+    is_clean = three_way_merge(base, ours, theirs, output_path)
+   
+    assert is_clean is True
+    result = output_path.read_bytes()
+    assert b"A (ours)\n" in result
+    assert b"B\n" in result
+    assert b"C (theirs)\n" in result
+
+
+def test_three_way_merge_conflict_markers(temp_repo_dir: Path) -> None:
+    """Test that a conflict results in correct markers and is_clean=False."""
+    # Overlapping change on the same line (B)
+    base = [b"A\n", b"B\n", b"C\n"]
+    ours = [b"A\n", b"B (modified ours)\n", b"C\n"]
+    theirs = [b"A\n", b"B (modified theirs)\n", b"C\n"]
+   
+    output_path = temp_repo_dir / "conflict_file.txt"
+   
+    is_clean = three_way_merge(base, ours, theirs, output_path)
+   
+    assert is_clean is False
+    result = output_path.read_bytes()
+   
+    # Check for markers
+    assert b"<<<<<<< HEAD (ours)\n" in result
+    assert b"B (modified ours)\n" in result
+    assert b"=======\n" in result
+    assert b"B (modified theirs)\n" in result
+    assert b">>>>>>> MERGE_HEAD (theirs)\n" in result
+
+
+
+
+def test_three_way_merge_with_empty_base(temp_repo_dir: Path) -> None:
+    """Test merging when the file didn't exist in base (Add/Add conflict)."""
+    base = []
+    ours = [b"new file content\n"]
+    theirs = [b"different content\n"]
+   
+    output_path = temp_repo_dir / "add_add_conflict.txt"
+   
+    is_clean = three_way_merge(base, ours, theirs, output_path)
+   
+    assert is_clean is False
+    result = output_path.read_bytes()
+    assert b"<<<<<<< HEAD (ours)\n" in result
+    assert b"different content\n" in result
+    assert b"=======\n" in result
+    assert b"new file content\n" in result
+    assert b">>>>>>> MERGE_HEAD (theirs)\n" in result
