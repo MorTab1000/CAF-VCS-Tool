@@ -219,8 +219,8 @@ def is_binary_blob(blob_path: Path) -> bool:
         with open(blob_path, 'rb') as f:
             chunk = f.read(8192)  # Read the first 8KB
             return b'\x00' in chunk  # Simple heuristic: if there's a null byte, it's likely binary
-    except OSError:
-        raise IOError(f"Failed to read blob at {blob_path}")
+    except OSError as e:
+        raise IOError(f"Failed to read blob at {blob_path}: {e}")
 
 def hash_and_save_blob(objects_dir, file_path):
     blob = save_file_content(objects_dir, file_path)
