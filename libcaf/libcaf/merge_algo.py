@@ -116,13 +116,11 @@ def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash:
     
 
 def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str]]:
-
-
     records = {}
     conflicts = []
     auto_merged = {}
     computed_hashes = {}
-    stack = [((current_path, merge_result, False))] # Stack stores: (current path, dictionary to process, visited flag)
+    stack = [(("", merge_result, False))] # Stack stores: (current path, dictionary to process, visited flag)
     objects_dir = repo_dir / ".caf" / "objects"
     while stack:
         current_path, current_dict, visited = stack.pop()
@@ -156,7 +154,7 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
                             conflicts.append((full_path, value))
                             has_conflict_in_dir = True
                         else:
-                           with ExitStack() as file_stack:                              
+                            with ExitStack() as file_stack:                              
                                 base_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / value.base_hash[:2] / value.base_hash)) if value.base_hash else []
                                 ours_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / value.ours_hash[:2] / value.ours_hash))
                                 theirs_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / value.theirs_hash[:2] / value.theirs_hash))
@@ -167,6 +165,9 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
                                     merged_hash = hash_and_save_blob(objects_dir, repo_dir / full_path)
                                     records[name] = TreeRecord(TreeRecordType.BLOB, merged_hash, name)
                                     auto_merged[full_path] = merged_hash
+                                else:
+                                    conflicts.append((full_path, value))
+                                    has_conflict_in_dir = True
                                
                     else:
                         conflicts.append((full_path, value))
@@ -177,7 +178,7 @@ def execute_merge(repo_dir: Path, merge_result: MergeResult, current_path: str =
                 save_tree(objects_dir, tree)
                 computed_hashes[current_path] = hash_object(tree)
    
-    root_hash = computed_hashes.get(current_path)
+    root_hash = computed_hashes.get("")
     if conflicts:
         return root_hash, conflicts, auto_merged
    
