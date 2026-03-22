@@ -61,10 +61,10 @@ class MergeConflict:
     theirs_hash: Optional[str]
     conflict_type: str  # "content", "modify/delete", or "type"
 
-MergeResult = Dict[str, Union[TreeRecord, MergeConflict, dict]]
+MergePlan = Dict[str, Union[TreeRecord, MergeConflict, dict]]
 
 
-def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash: Optional[str], fetch_tree: Callable[[str], Tree]) -> MergeResult:
+def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash: Optional[str], fetch_tree: Callable[[str], Tree]) -> MergePlan:
     """
     Compares three trees and returns the NEW directory structure.
     Recursively handles sub-directories.
@@ -115,7 +115,7 @@ def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash:
     return result
     
 
-def execute_merge(repo_dir: Path, objects_dir: Path, merge_result: MergeResult, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str]]:
+def execute_merge(repo_dir: Path, objects_dir: Path, merge_result: MergePlan, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str]]:
     records = {}
     conflicts = []
     auto_merged = {}
