@@ -3,17 +3,17 @@
 import shutil
 from collections import deque
 from collections.abc import Callable, Generator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Concatenate
+from typing import Concatenate, Optional
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
-                        OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR)
+                        OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE)
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
-from libcaf.merge_algo import find_lca
+from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, execute_merge
 from enum import Enum, auto
 
 class RepositoryError(Exception):
@@ -27,7 +27,14 @@ class MergeResult(Enum):
     UP_TO_DATE = auto()
     FAST_FORWARD = auto()
     MERGE_CREATED = auto()
+    CONFLICTS = auto()
 
+@dataclass
+class MergeReport:
+    status: MergeResult
+    commit_hash: Optional[HashRef] = None
+    auto_merged: dict[str, str] = field(default_factory=dict)
+    conflicts: list[tuple[str, MergeConflict]] = field(default_factory=list)
 
 @dataclass
 class Diff:
@@ -626,6 +633,13 @@ class Repository:
         return self.repo_path() / HEAD_FILE
     
     @requires_repo
+    def merge_head_file(self) -> Path:
+        """Get the path to the MERGE_HEAD file within the repository.
+                
+        :return: The path to the MERGE_HEAD file."""
+        return self.repo_path() / MERGE_HEAD_FILE
+    
+    @requires_repo
     def update_head(self, commit_ref: HashRef) -> None:
         """
         Update the HEAD file to point to a specific commit. 
@@ -637,7 +651,7 @@ class Repository:
         write_ref(self.head_file(), commit_ref)
 
     @requires_repo
-    def merge(self, target_ref: Ref, source_ref: Ref) -> tuple[MergeResult, HashRef]:
+    def merge(self, target_ref: Ref, source_ref: Ref, author: str) -> MergeReport:
         """
         Merges the source_branch into target_branch.
         """
@@ -650,28 +664,48 @@ class Repository:
             raise RefError(f"Source reference {source_ref} cannot be resolved")
     
         try:
-            load_commit(self.objects_dir(), target_hash)
+            target_commit = load_commit(self.objects_dir(), target_hash)
         except Exception:
             raise RepositoryError(f"Target commit {target_hash} not found or invalid")
 
         try:
-            load_commit(self.objects_dir(), source_hash)
+            source_commit = load_commit(self.objects_dir(), source_hash)
         except Exception:
             raise RepositoryError(f"Source commit {source_hash} not found or invalid")
 
         lca = find_lca(self.objects_dir(), target_hash, source_hash)
 
+
         if lca is None:
              raise NotImplementedError("Unrelated histories is not supported")
 
         if lca == source_hash:
-             return MergeResult.UP_TO_DATE, target_hash
+             return MergeReport(MergeResult.UP_TO_DATE, target_hash)
 
         if lca == target_hash:
-             return MergeResult.FAST_FORWARD, source_hash
+             return MergeReport(MergeResult.FAST_FORWARD, source_hash)
+        
+        # Perform a three-way merge using the LCA commit as the common ancestor
 
-        #(TODO)
-        raise NotImplementedError("3-way merge not implemented yet")
+        current_head_hash = self.head_commit()
+        if target_hash != current_head_hash:
+            raise RepositoryError("Can only merge into the currently checked-out branch.")
+
+        lca_commit = load_commit(self.objects_dir(), lca)
+        merge_plan = merge_trees(lca_commit.tree_hash, target_commit.tree_hash, source_commit.tree_hash,
+                                 lambda h: load_tree(self.objects_dir(), h))
+        root_hash, conflicts, auto_merged = execute_merge(self.working_dir, self.objects_dir(), merge_plan)
+        if  conflicts:
+            write_ref(self.merge_head_file(), source_hash)
+            return MergeReport(MergeResult.CONFLICTS, target_hash, auto_merged, conflicts)
+        
+        
+        new_commit = Commit(root_hash, author, f'Merge {source_ref} into {target_ref}', int(datetime.now().timestamp()), [target_hash, source_hash])
+        save_commit(self.objects_dir(), new_commit)
+        new_commit_hash = hash_object(new_commit)
+        return MergeReport(MergeResult.MERGE_CREATED, new_commit_hash, auto_merged, conflicts)
+
+
     
   
 

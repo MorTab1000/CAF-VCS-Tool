@@ -9,6 +9,6 @@ DEFAULT_BRANCH = 'main'
 REFS_DIR = 'refs'
 HEADS_DIR = 'heads'
 TAGS_DIR = 'tags'
-
+MERGE_HEAD_FILE = 'MERGE_HEAD'
 HASH_LENGTH = hash_length()
 HASH_CHARSET = '0123456789abcdef'
