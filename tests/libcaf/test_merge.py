@@ -88,7 +88,7 @@ def test_merge_unrelated_histories(temp_repo: Repository):
     hash_b = hash_object(commit_b)
 
     with pytest.raises(NotImplementedError):
-        temp_repo.merge(hash_a, hash_b)
+        temp_repo.merge(hash_a, hash_b, "Author")
 
 def test_merge_already_up_to_date(temp_repo: Repository):
     """
@@ -101,10 +101,10 @@ def test_merge_already_up_to_date(temp_repo: Repository):
     (temp_repo.working_dir / "new.txt").write_text("new")
     head_hash = temp_repo.commit_working_dir("Author", "Forward")
 
-    result, ref = temp_repo.merge(head_hash, base_hash)
+    report = temp_repo.merge(head_hash, base_hash, "Author")
     
-    assert result == MergeResult.UP_TO_DATE
-    assert ref == head_hash
+    assert report.status == MergeResult.UP_TO_DATE
+    assert report.commit_hash == head_hash
 
 
 def test_merge_fast_forward(temp_repo: Repository):
@@ -118,10 +118,10 @@ def test_merge_fast_forward(temp_repo: Repository):
     (temp_repo.working_dir / "feature.txt").write_text("feature")
     feature_hash = temp_repo.commit_working_dir("Author", "Feature")
 
-    result, ref = temp_repo.merge(base_hash, feature_hash)
-    
-    assert result == MergeResult.FAST_FORWARD
-    assert ref == feature_hash
+    report = temp_repo.merge(base_hash, feature_hash, "Author")
+
+    assert report.status == MergeResult.FAST_FORWARD
+    assert report.commit_hash == feature_hash
 
 
 def test_merge_invalid_commit(temp_repo: Repository):
@@ -135,4 +135,4 @@ def test_merge_invalid_commit(temp_repo: Repository):
     fake_hash = "0" * 40
 
     with pytest.raises(RepositoryError):
-        temp_repo.merge(base_hash, fake_hash)
+        temp_repo.merge(base_hash, fake_hash, "Author")
