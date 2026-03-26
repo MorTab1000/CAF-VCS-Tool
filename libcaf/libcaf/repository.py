@@ -740,12 +740,12 @@ class Repository:
 
         diffs = self.diff_commits(current_hash, target_hash)
         flattened_diffs = flatten_diffs_with_paths(diffs)
-
-        added_paths: set[Path] = set()
+        move_pairs = pair_moves(flattened_diffs)
+        added_paths: set[Path] = {dst for _, dst in move_pairs}
+        
         for diff, rel_path in flattened_diffs:
             if not isinstance(diff, AddedDiff):
                 continue
-
             if diff.record.type == TreeRecordType.BLOB:
                 added_paths.add(rel_path)
             elif diff.record.type == TreeRecordType.TREE:
@@ -754,7 +754,7 @@ class Repository:
         self._assert_clean_workspace(current_blob_map, target_blob_map, added_paths)
 
         self._apply_pass1_deletions(flattened_diffs)
-        self._apply_pass2_renames(pair_moves(flattened_diffs))
+        self._apply_pass2_renames(move_pairs)
         self._apply_pass3_writes(flattened_diffs, target_blob_map)
 
         self.update_head(target_ref)
@@ -890,6 +890,7 @@ def branch_ref(branch: str) -> SymRef:
     :return: A SymRef object representing the branch reference."""
     return SymRef(f'{HEADS_DIR}/{branch}')
 
+
 def flatten_diffs_with_paths(initial_diffs: Sequence[Diff], initial_parent_path: Path = Path()) -> list[tuple[Diff, Path]]:
     """Flatten nested diffs into a list with their working-tree relative paths iteratively."""
     flattened: list[tuple[Diff, Path]] = []
@@ -909,6 +910,7 @@ def flatten_diffs_with_paths(initial_diffs: Sequence[Diff], initial_parent_path:
                 stack.append((diff.children, current_path))
 
     return flattened
+
 
 def pair_moves(flattened_diffs: Sequence[tuple[Diff, Path]]) -> list[tuple[Path, Path]]:
     """Extract source/destination path pairs for moved records."""
