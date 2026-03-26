@@ -553,8 +553,6 @@ class Repository:
 
         return top_level_diff.children
 
-    
-
     def _collect_tree_blob_map(self, initial_tree_hash: str, initial_base_path: Path = Path()) -> dict[Path, HashRef]:
         """Collect a map of all blob paths and hashes reachable from a tree object iteratively."""
         blob_map: dict[Path, HashRef] = {}
@@ -640,28 +638,37 @@ class Repository:
                 raise RepositoryError(f'Checkout aborted: untracked path in the way: {path}')
 
     def _apply_pass1_deletions(self, flattened_diffs: Sequence[tuple[Diff, Path]]) -> None:
-        """Apply deletion pass: remove files/directories for RemovedDiff nodes."""
-        deletion_items = [
-            (diff, path)
-            for diff, path in flattened_diffs
-            if isinstance(diff, RemovedDiff)
-        ]
+            """Apply deletion pass: remove files/directories for RemovedDiff nodes."""
+            deletion_items = [
+                (diff, path)
+                for diff, path in flattened_diffs
+                if isinstance(diff, RemovedDiff)
+            ]
 
-        deletion_items.sort(key=lambda item: len(item[1].parts), reverse=True)
+            # Sort by path length descending to delete deepest items first
+            deletion_items.sort(key=lambda item: len(item[1].parts), reverse=True)
 
-        for diff, rel_path in deletion_items:
-            abs_path = self.working_dir / rel_path
-            if not abs_path.exists():
-                continue
+            for diff, rel_path in deletion_items:
+                abs_path = self.working_dir / rel_path
+                if not abs_path.exists():
+                    continue
 
-            if diff.record.type == TreeRecordType.TREE and abs_path.is_dir():
-                shutil.rmtree(abs_path)
-                self._cleanup_empty_parents(abs_path.parent)
-                continue
+                if diff.record.type == TreeRecordType.TREE and abs_path.is_dir():
+                    for blob_path in self._expand_tree_blob_paths(diff.record.hash, rel_path):
+                        tracked_file = self.working_dir / blob_path
+                        if tracked_file.exists() and tracked_file.is_file():
+                            tracked_file.unlink()
+                            self._cleanup_empty_parents(tracked_file.parent)
+                    
+                    try:
+                        abs_path.rmdir()
+                    except OSError:
+                        pass
+                    continue
 
-            if abs_path.is_file() or abs_path.is_symlink():
-                abs_path.unlink()
-                self._cleanup_empty_parents(abs_path.parent)
+                if abs_path.is_file() or abs_path.is_symlink():
+                    abs_path.unlink()
+                    self._cleanup_empty_parents(abs_path.parent)
 
     def _apply_pass2_renames(self, move_pairs: Sequence[tuple[Path, Path]]) -> None:
         """Apply rename pass using O(1) filesystem moves."""
