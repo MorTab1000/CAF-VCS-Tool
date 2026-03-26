@@ -1,0 +1,165 @@
+from libcaf.repository import HashRef, Repository, RepositoryError
+from pytest import raises
+
+
+def test_checkout_additions_writes_new_files_to_disk(temp_repo: Repository) -> None:
+    base_file = temp_repo.working_dir / 'base.txt'
+    base_file.write_text('base content')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Base commit')
+
+    new_file = temp_repo.working_dir / 'new_file.txt'
+    nested_dir = temp_repo.working_dir / 'docs'
+    nested_file = nested_dir / 'notes.txt'
+
+    nested_dir.mkdir()
+    new_file.write_text('new file content')
+    nested_file.write_text('nested file content')
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Add new files')
+
+    temp_repo.checkout(commit_ref1)
+    assert not new_file.exists()
+    assert not nested_file.exists()
+
+    temp_repo.checkout(commit_ref2)
+
+    assert new_file.exists()
+    assert nested_file.exists()
+    assert new_file.read_text() == 'new file content'
+    assert nested_file.read_text() == 'nested file content'
+
+
+def test_checkout_deletions_unlinks_files_on_disk(temp_repo: Repository) -> None:
+    stable_file = temp_repo.working_dir / 'stable.txt'
+    stable_file.write_text('always present')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Initial state')
+
+    later_file = temp_repo.working_dir / 'later.txt'
+    later_file.write_text('introduced later')
+
+    temp_repo.commit_working_dir('Author', 'Add later file')
+
+    temp_repo.checkout(commit_ref1)
+
+    assert stable_file.exists()
+    assert not later_file.exists()
+
+
+def test_checkout_modifications_updates_file_content(temp_repo: Repository) -> None:
+    target_file = temp_repo.working_dir / 'config.ini'
+    target_file.write_text('version=1')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Initial config')
+
+    target_file.write_text('version=2')
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Update config')
+
+    temp_repo.checkout(commit_ref1)
+    assert target_file.read_text() == 'version=1'
+
+    temp_repo.checkout(commit_ref2)
+    assert target_file.read_text() == 'version=2'
+
+
+def test_checkout_updates_head_to_target_ref(temp_repo: Repository) -> None:
+    file_path = temp_repo.working_dir / 'head_state.txt'
+    file_path.write_text('first')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'First commit')
+
+    file_path.write_text('second')
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Second commit') # check
+
+    assert temp_repo.head_commit() == commit_ref2
+
+    temp_repo.checkout(commit_ref1)
+
+    assert temp_repo.head_commit() == commit_ref1
+
+
+def test_checkout_dirty_workspace_conflict_raises_and_aborts(temp_repo: Repository) -> None: 
+    tracked_file = temp_repo.working_dir / 'tracked.txt'
+    tracked_file.write_text('base')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Base commit')
+
+    tracked_file.write_text('target version')
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Target commit')
+
+    temp_repo.checkout(commit_ref1)
+    assert tracked_file.read_text() == 'base'
+
+    dirty_content = 'dirty local change'
+    tracked_file.write_text(dirty_content)
+
+    with raises(RepositoryError):
+        temp_repo.checkout(commit_ref2)
+
+    # Checkout must abort without changing disk state or HEAD.
+    assert tracked_file.read_text() == dirty_content
+    assert temp_repo.head_ref() == commit_ref1
+
+
+def test_checkout_renames_file_correctly(temp_repo: Repository) -> None:
+    old_path = temp_repo.working_dir / 'old_name.txt'
+    old_content = 'same content after move'
+    old_path.write_text(old_content)
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Initial file location')
+
+    new_dir = temp_repo.working_dir / 'renamed_dir'
+    new_path = new_dir / 'new_name.txt'
+    new_dir.mkdir()
+    old_path.rename(new_path)
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Move file to a new directory')
+
+    temp_repo.checkout(commit_ref1)
+    assert old_path.exists()
+    assert not new_path.exists()
+    assert temp_repo.head_ref() == commit_ref1
+
+    temp_repo.checkout(commit_ref2)
+    assert not old_path.exists()
+    assert new_path.exists()
+    assert new_path.read_text() == old_content
+    assert temp_repo.head_ref() == commit_ref2
+
+
+def test_checkout_removes_empty_directories(temp_repo: Repository) -> None:
+    keep_file = temp_repo.working_dir / 'keep.txt'
+    keep_file.write_text('persist across commits')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Base without temp directory')
+
+    ephemeral_dir = temp_repo.working_dir / 'ephemeral'
+    ephemeral_file = ephemeral_dir / 'only_file.txt'
+    ephemeral_dir.mkdir()
+    ephemeral_file.write_text('temporary content')
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Add temporary directory and file')
+
+    temp_repo.checkout(commit_ref1)
+    assert not ephemeral_file.exists()
+    assert not ephemeral_dir.exists()
+    assert keep_file.exists()
+
+    temp_repo.checkout(commit_ref2)
+    assert ephemeral_file.exists()
+    assert ephemeral_dir.exists()
+
+
+def test_checkout_ignores_untracked_files(temp_repo: Repository) -> None:
+    tracked_file = temp_repo.working_dir / 'tracked.txt'
+    tracked_file.write_text('v1')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Track file v1')
+
+    tracked_file.write_text('v2')
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Track file v2')
+
+    untracked_file = temp_repo.working_dir / 'untracked.local'
+    untracked_content = 'do not modify me'
+    untracked_file.write_text(untracked_content)
+
+    temp_repo.checkout(commit_ref1)
+
+    assert tracked_file.read_text() == 'v1'
+    assert untracked_file.exists()
+    assert untracked_file.read_text() == untracked_content
+
+    temp_repo.checkout(commit_ref2)
+    assert tracked_file.read_text() == 'v2'
+    assert untracked_file.exists()
+    assert untracked_file.read_text() == untracked_content
