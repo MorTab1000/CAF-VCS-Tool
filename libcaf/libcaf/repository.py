@@ -1,5 +1,6 @@
 """libcaf repository management."""
 
+import os
 import shutil
 from collections import deque
 from collections.abc import Callable, Generator, Sequence
@@ -11,7 +12,8 @@ from typing import Concatenate
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
                         OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR)
-from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree
+from .plumbing import (hash_file, hash_object, load_commit, load_tree, open_content_for_reading, save_commit,
+                       save_file_content, save_tree)
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
 from libcaf.merge_algo import find_lca
 from enum import Enum, auto
@@ -550,6 +552,212 @@ class Repository:
                     parent_diff.children.append(local_diff)
 
         return top_level_diff.children
+
+    
+
+    def _collect_tree_blob_map(self, initial_tree_hash: str, initial_base_path: Path = Path()) -> dict[Path, HashRef]:
+        """Collect a map of all blob paths and hashes reachable from a tree object iteratively."""
+        blob_map: dict[Path, HashRef] = {}
+        
+        stack = [(initial_tree_hash, initial_base_path)]
+
+        while stack:
+            current_tree_hash, current_base_path = stack.pop()
+            tree = load_tree(self.objects_dir(), current_tree_hash)
+
+            for record in tree.records.values():
+                record_path = current_base_path / record.name
+                
+                if record.type == TreeRecordType.BLOB:
+                    blob_map[record_path] = HashRef(record.hash)
+                elif record.type == TreeRecordType.TREE:
+                    stack.append((record.hash, record_path))
+
+        return blob_map
+    
+    def _collect_blob_map(self, commit_hash: HashRef | None) -> dict[Path, HashRef]:
+        """Collect all tracked blob paths for a commit hash."""
+        if commit_hash is None:
+            return {}
+
+        commit = load_commit(self.objects_dir(), commit_hash)
+        return self._collect_tree_blob_map(commit.tree_hash)
+
+    def _expand_tree_blob_paths(self, tree_hash: str, base_path: Path) -> set[Path]:
+        """Expand a tree hash to all descendant blob paths under base_path."""
+        return set(self._collect_tree_blob_map(tree_hash, base_path).keys())
+
+    
+
+    def _cleanup_empty_parents(self, start_path: Path) -> None:
+        """Remove empty parent directories up to, but not including, the working directory."""
+        current = start_path
+
+        while current != self.working_dir and current != self.working_dir.parent:
+            if not current.exists() or not current.is_dir():
+                current = current.parent
+                continue
+
+            try:
+                current.rmdir()
+            except OSError:
+                break
+
+            current = current.parent
+
+    def _stream_blob_to_worktree(self, blob_hash: str, destination: Path, chunk_size: int = 64 * 1024) -> None:
+        """Stream a blob from the object store to a destination path using fixed-size chunks."""
+        with open_content_for_reading(self.objects_dir(), blob_hash) as source, destination.open('wb') as dest:
+            while True:
+                chunk = source.read(chunk_size)
+                if not chunk:
+                    break
+                dest.write(chunk)
+
+    def _assert_clean_workspace(self, current_blob_map: dict[Path, HashRef],
+                                target_blob_map: dict[Path, HashRef],
+                                added_paths: set[Path]) -> None:
+        """Validate tracked files are clean and no incoming added file overwrites untracked data."""
+        for path, current_hash in current_blob_map.items():
+            target_hash = target_blob_map.get(path)
+            if target_hash == current_hash:
+                continue
+
+            abs_path = self.working_dir / path
+            if not abs_path.exists() or not abs_path.is_file():
+                raise RepositoryError(f'Checkout aborted: tracked path changed on disk: {path}')
+
+            disk_hash = hash_file(abs_path)
+            if disk_hash != current_hash:
+                raise RepositoryError(f'Checkout aborted: dirty tracked file: {path}')
+
+        for path in added_paths:
+            if path in current_blob_map:
+                continue
+
+            abs_path = self.working_dir / path
+            if abs_path.exists():
+                raise RepositoryError(f'Checkout aborted: untracked path in the way: {path}')
+
+    def _apply_pass1_deletions(self, flattened_diffs: Sequence[tuple[Diff, Path]]) -> None:
+        """Apply deletion pass: remove files/directories for RemovedDiff nodes."""
+        deletion_items = [
+            (diff, path)
+            for diff, path in flattened_diffs
+            if isinstance(diff, RemovedDiff)
+        ]
+
+        deletion_items.sort(key=lambda item: len(item[1].parts), reverse=True)
+
+        for diff, rel_path in deletion_items:
+            abs_path = self.working_dir / rel_path
+            if not abs_path.exists():
+                continue
+
+            if diff.record.type == TreeRecordType.TREE and abs_path.is_dir():
+                shutil.rmtree(abs_path)
+                self._cleanup_empty_parents(abs_path.parent)
+                continue
+
+            if abs_path.is_file() or abs_path.is_symlink():
+                abs_path.unlink()
+                self._cleanup_empty_parents(abs_path.parent)
+
+    def _apply_pass2_renames(self, move_pairs: Sequence[tuple[Path, Path]]) -> None:
+        """Apply rename pass using O(1) filesystem moves."""
+        for src_rel, dst_rel in move_pairs:
+            src_abs = self.working_dir / src_rel
+            dst_abs = self.working_dir / dst_rel
+
+            if not src_abs.exists():
+                continue
+
+            os.makedirs(dst_abs.parent, exist_ok=True)
+
+            if dst_abs.exists():
+                if dst_abs.is_dir():
+                    shutil.rmtree(dst_abs)
+                else:
+                    dst_abs.unlink()
+
+            os.rename(src_abs, dst_abs)
+            self._cleanup_empty_parents(src_abs.parent)
+
+    def _apply_pass3_writes(self, flattened_diffs: Sequence[tuple[Diff, Path]],
+                            target_blob_map: dict[Path, HashRef]) -> None:
+        """Apply write pass for additions and modifications using chunked streaming."""
+        for diff, rel_path in flattened_diffs:
+            if isinstance(diff, AddedDiff):
+                if diff.record.type == TreeRecordType.TREE:
+                    os.makedirs(self.working_dir / rel_path, exist_ok=True)
+                    for blob_path in sorted(self._expand_tree_blob_paths(diff.record.hash, rel_path),
+                                            key=lambda p: len(p.parts)):
+                        abs_path = self.working_dir / blob_path
+                        abs_path.parent.mkdir(parents=True, exist_ok=True)
+                        self._stream_blob_to_worktree(target_blob_map[blob_path], abs_path)
+                else:
+                    blob_hash = target_blob_map.get(rel_path)
+                    if blob_hash is None:
+                        continue
+
+                    abs_path = self.working_dir / rel_path
+                    abs_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    if abs_path.exists() and abs_path.is_dir():
+                        shutil.rmtree(abs_path)
+
+                    self._stream_blob_to_worktree(blob_hash, abs_path)
+
+            elif isinstance(diff, ModifiedDiff) and diff.record.type == TreeRecordType.BLOB:
+                blob_hash = target_blob_map.get(rel_path)
+                if blob_hash is None:
+                    continue
+
+                abs_path = self.working_dir / rel_path
+                abs_path.parent.mkdir(parents=True, exist_ok=True)
+
+                if abs_path.exists():
+                    if abs_path.is_dir():
+                        shutil.rmtree(abs_path)
+                    else:
+                        abs_path.unlink()
+
+                self._stream_blob_to_worktree(blob_hash, abs_path)
+
+    @requires_repo
+    def checkout(self, target_ref: Ref) -> None:
+        """Checkout a target reference into the working directory and update HEAD to that commit."""
+        target_hash = self.resolve_ref(target_ref)
+        if target_hash is None:
+            raise RefError(f'Cannot resolve reference {target_ref}')
+
+        current_hash = self.head_commit()
+        if current_hash == target_hash:
+            return
+
+        current_blob_map = self._collect_blob_map(current_hash)
+        target_blob_map = self._collect_blob_map(target_hash)
+
+        diffs = self.diff_commits(current_hash, target_hash)
+        flattened_diffs = flatten_diffs_with_paths(diffs)
+
+        added_paths: set[Path] = set()
+        for diff, rel_path in flattened_diffs:
+            if not isinstance(diff, AddedDiff):
+                continue
+
+            if diff.record.type == TreeRecordType.BLOB:
+                added_paths.add(rel_path)
+            elif diff.record.type == TreeRecordType.TREE:
+                added_paths.update(self._expand_tree_blob_paths(diff.record.hash, rel_path))
+
+        self._assert_clean_workspace(current_blob_map, target_blob_map, added_paths)
+
+        self._apply_pass1_deletions(flattened_diffs)
+        self._apply_pass2_renames(pair_moves(flattened_diffs))
+        self._apply_pass3_writes(flattened_diffs, target_blob_map)
+
+        self.update_head(target_ref)
     
     @requires_repo
     def tags_dir(self) -> Path:
@@ -681,3 +889,48 @@ def branch_ref(branch: str) -> SymRef:
     :param branch: The name of the branch.
     :return: A SymRef object representing the branch reference."""
     return SymRef(f'{HEADS_DIR}/{branch}')
+
+def flatten_diffs_with_paths(initial_diffs: Sequence[Diff], initial_parent_path: Path = Path()) -> list[tuple[Diff, Path]]:
+    """Flatten nested diffs into a list with their working-tree relative paths iteratively."""
+    flattened: list[tuple[Diff, Path]] = []
+    
+    # The stack stores tuples of: (list_of_diffs, their_parent_path)
+    stack = [(initial_diffs, initial_parent_path)]
+
+    while stack:
+        current_diffs, current_parent = stack.pop()
+        
+        for diff in current_diffs:
+            # Calculate the path for the current diff
+            current_path = current_parent / diff.record.name if diff.record.name else current_parent
+            flattened.append((diff, current_path))
+            
+            if diff.children:
+                stack.append((diff.children, current_path))
+
+    return flattened
+
+def pair_moves(flattened_diffs: Sequence[tuple[Diff, Path]]) -> list[tuple[Path, Path]]:
+    """Extract source/destination path pairs for moved records."""
+    path_by_diff_id = {id(diff): path for diff, path in flattened_diffs}
+    move_pairs: list[tuple[Path, Path]] = []
+    seen_pairs: set[tuple[Path, Path]] = set()
+
+    for diff, dst_path in flattened_diffs:
+        if not isinstance(diff, MovedFromDiff):
+            continue
+        if diff.moved_from is None:
+            continue
+
+        src_path = path_by_diff_id.get(id(diff.moved_from))
+        if src_path is None:
+            continue
+
+        pair = (src_path, dst_path)
+        if pair in seen_pairs:
+            continue
+
+        seen_pairs.add(pair)
+        move_pairs.append(pair)
+
+    return move_pairs
