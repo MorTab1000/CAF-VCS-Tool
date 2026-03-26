@@ -188,30 +188,48 @@ def test_checkout_aborts_when_untracked_file_in_the_way_of_addition(temp_repo: R
 
 
 def test_checkout_aborts_when_untracked_file_in_the_way_of_rename(temp_repo: Repository) -> None:
-    # 1. Base commit (file is at the old location)
     source_file = temp_repo.working_dir / 'old_name.txt'
     source_file.write_text('file data')
     commit_ref1 = temp_repo.commit_working_dir('Author', 'Base commit')
 
-    # 2. Target commit (file is renamed)
     dest_file = temp_repo.working_dir / 'new_name.txt'
     source_file.rename(dest_file)
     commit_ref2 = temp_repo.commit_working_dir('Author', 'Rename file')
 
-    # 3. Go back to base commit
     temp_repo.checkout(commit_ref1)
     assert source_file.exists()
     assert not dest_file.exists()
 
-    # 4. Create an untracked file at the exact DESTINATION of the rename
     untracked_content = 'do not crush me'
     dest_file.write_text(untracked_content)
 
-    # 5. Attempt checkout. It MUST abort.
     with raises(RepositoryError):
         temp_repo.checkout(commit_ref2)
 
-    # 6. Prove the untracked file survived, the source didn't move, and HEAD didn't change
     assert dest_file.read_text() == untracked_content
     assert source_file.exists()
+    assert temp_repo.head_commit() == commit_ref1
+
+
+def test_checkout_deletions_preserve_untracked_files_in_removed_directories(temp_repo: Repository) -> None:
+    base_file = temp_repo.working_dir / 'base.txt'
+    base_file.write_text('base')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Base commit')
+
+    config_dir = temp_repo.working_dir / 'config'
+    config_dir.mkdir()
+    tracked_file = config_dir / 'settings.ini'
+    tracked_file.write_text('tracked data')
+    temp_repo.commit_working_dir('Author', 'Add config dir')
+
+    untracked_file = config_dir / 'local_secrets.env'
+    untracked_content = 'do not delete me'
+    untracked_file.write_text(untracked_content)
+
+    temp_repo.checkout(commit_ref1)
+
+    assert not tracked_file.exists()
+    assert untracked_file.exists()
+    assert config_dir.exists()
+    assert untracked_file.read_text() == untracked_content
     assert temp_repo.head_commit() == commit_ref1
