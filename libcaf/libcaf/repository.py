@@ -586,8 +586,6 @@ class Repository:
         """Expand a tree hash to all descendant blob paths under base_path."""
         return set(self._collect_tree_blob_map(tree_hash, base_path).keys())
 
-    
-
     def _cleanup_empty_parents(self, start_path: Path) -> None:
         """Remove empty parent directories up to, but not including, the working directory."""
         current = start_path
@@ -635,6 +633,14 @@ class Repository:
                 raise RepositoryError(f'Checkout aborted: dirty tracked file: {path}')
 
         for path in added_paths:
+            for parent in path.parents:
+                if parent in current_blob_map:
+                    continue 
+        
+                abs_parent = self.working_dir / parent
+                if abs_parent.exists() and not abs_parent.is_dir():
+                    raise RepositoryError(f'Checkout aborted: untracked file blocks directory creation: {parent}')
+
             if path in current_blob_map:
                 continue
 
@@ -643,77 +649,77 @@ class Repository:
                 raise RepositoryError(f'Checkout aborted: untracked path in the way: {path}')
 
     def _apply_pass1_deletions(self, flattened_diffs: Sequence[tuple[Diff, Path]]) -> None:
-            """Apply deletion pass: remove files/directories for RemovedDiff nodes."""
-            deletion_items = [
-                (diff, path)
-                for diff, path in flattened_diffs
-                if isinstance(diff, RemovedDiff)
-            ]
+        """Apply deletion pass: remove files/directories for RemovedDiff nodes."""
+        deletion_items = [
+            (diff, path)
+            for diff, path in flattened_diffs
+            if isinstance(diff, RemovedDiff)
+        ]
 
-            # Sort by path length descending to delete deepest items first
-            deletion_items.sort(key=lambda item: len(item[1].parts), reverse=True)
+        # Sort by path length descending to delete deepest items first
+        deletion_items.sort(key=lambda item: len(item[1].parts), reverse=True)
 
-            for diff, rel_path in deletion_items:
-                abs_path = self.working_dir / rel_path
-                if not abs_path.exists():
-                    continue
+        for diff, rel_path in deletion_items:
+            abs_path = self.working_dir / rel_path
+            if not abs_path.exists():
+                continue
 
-                if diff.record.type == TreeRecordType.TREE and abs_path.is_dir():
-                    for blob_path in self._expand_tree_blob_paths(diff.record.hash, rel_path):
-                        tracked_file = self.working_dir / blob_path
-                        if tracked_file.exists() and tracked_file.is_file():
-                            tracked_file.unlink()
-                            self._cleanup_empty_parents(tracked_file.parent)
-                    
-                    try:
-                        abs_path.rmdir()
-                    except OSError:
-                        pass
-                    continue
+            if diff.record.type == TreeRecordType.TREE and abs_path.is_dir():
+                for blob_path in self._expand_tree_blob_paths(diff.record.hash, rel_path):
+                    tracked_file = self.working_dir / blob_path
+                    if tracked_file.exists() and tracked_file.is_file():
+                        tracked_file.unlink()
+                        self._cleanup_empty_parents(tracked_file.parent)
+                
+                try:
+                    abs_path.rmdir()
+                except OSError:
+                    pass
+                continue
 
-                if abs_path.is_file() or abs_path.is_symlink():
-                    abs_path.unlink()
-                    self._cleanup_empty_parents(abs_path.parent)
+            if abs_path.is_file() or abs_path.is_symlink():
+                abs_path.unlink()
+                self._cleanup_empty_parents(abs_path.parent)
 
     def _apply_pass2_renames(self, move_pairs: Sequence[tuple[Path, Path]]) -> None:
-            """Apply rename pass using a safe 2-phase temp shuffle to prevent chained move data loss."""
-            if not move_pairs:
-                return
+        """Apply rename pass using a safe 2-phase temp shuffle to prevent chained move data loss."""
+        if not move_pairs:
+            return
 
-            # Create a hidden temp directory inside the .caf folder
-            tmp_dir = self.objects_dir().parent / 'tmp_renames'
-            tmp_dir.mkdir(parents=True, exist_ok=True)
+        # Create a hidden temp directory inside the .caf folder
+        tmp_dir = self.objects_dir().parent / 'tmp_renames'
+        tmp_dir.mkdir(parents=True, exist_ok=True)
 
-            safe_moves: list[tuple[Path, Path, Path]] = []
+        safe_moves: list[tuple[Path, Path, Path]] = []
 
-            for src_rel, dst_rel in move_pairs:
-                src_abs = self.working_dir / src_rel
-                if not src_abs.exists():
-                    continue
+        for src_rel, dst_rel in move_pairs:
+            src_abs = self.working_dir / src_rel
+            if not src_abs.exists():
+                continue
 
-                tmp_path = tmp_dir / uuid.uuid4().hex
-                os.rename(src_abs, tmp_path)
-                
-                safe_moves.append((tmp_path, dst_rel, src_abs.parent))
+            tmp_path = tmp_dir / uuid.uuid4().hex
+            os.rename(src_abs, tmp_path)
+            
+            safe_moves.append((tmp_path, dst_rel, src_abs.parent))
 
-            for tmp_path, dst_rel, original_parent in safe_moves:
-                dst_abs = self.working_dir / dst_rel
-                os.makedirs(dst_abs.parent, exist_ok=True)
+        for tmp_path, dst_rel, original_parent in safe_moves:
+            dst_abs = self.working_dir / dst_rel
+            os.makedirs(dst_abs.parent, exist_ok=True)
 
-                if dst_abs.exists():
-                    if dst_abs.is_dir():
-                        shutil.rmtree(dst_abs)
-                    else:
-                        dst_abs.unlink()
+            if dst_abs.exists():
+                if dst_abs.is_dir():
+                    shutil.rmtree(dst_abs)
+                else:
+                    dst_abs.unlink()
 
-                os.rename(tmp_path, dst_abs)
-                self._cleanup_empty_parents(original_parent)
+            os.rename(tmp_path, dst_abs)
+            self._cleanup_empty_parents(original_parent)
 
-            # Cleanup the temp directory
-            try:
-                tmp_dir.rmdir()
-            except OSError:
-                raise RepositoryError('Failed to clean up temporary rename directory. Please check and remove: ' + str(tmp_dir))
+        # Cleanup the temp directory
+        try:
+            tmp_dir.rmdir()
+        except OSError:
+            raise RepositoryError('Failed to clean up temporary rename directory. Please check and remove: ' + str(tmp_dir))
 
     def _apply_pass3_writes(self, flattened_diffs: Sequence[tuple[Diff, Path]],
                             target_blob_map: dict[Path, HashRef]) -> None:
