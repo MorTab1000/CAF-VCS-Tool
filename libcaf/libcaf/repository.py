@@ -1,15 +1,17 @@
 """libcaf repository management."""
 
-import uuid
 import os
 import shutil
 import tempfile
+import uuid
+from pathlib import Path
 from collections import deque
 from collections.abc import Callable, Generator, Sequence
-from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
-from pathlib import Path
+from dataclasses import dataclass
+from enum import Enum, auto
+
 from typing import Concatenate
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
@@ -18,7 +20,6 @@ from .plumbing import (hash_file, hash_object, load_commit, load_tree, open_cont
                        save_file_content, save_tree)
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
 from libcaf.merge_algo import find_lca
-from enum import Enum, auto
 
 class RepositoryError(Exception):
     """Exception raised for repository-related errors."""
