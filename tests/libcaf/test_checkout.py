@@ -207,9 +207,8 @@ def test_checkout_handles_chained_renames_safely(temp_repo: Repository) -> None:
     temp_repo.checkout(commit_ref2)
 
     assert not file_a.exists()
-    assert file_b.exists() and file_b.read_text() == 'content A' # A became B
-    assert file_c.exists() and file_c.read_text() == 'content B' # B became C
-
+    assert file_b.exists() and file_b.read_text() == 'content A' 
+    assert file_c.exists() and file_c.read_text() == 'content B' 
 
 def test_checkout_aborts_when_untracked_file_in_the_way_of_rename(temp_repo: Repository) -> None:
     source_file = temp_repo.working_dir / 'old_name.txt'
