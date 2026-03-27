@@ -623,6 +623,10 @@ class Repository:
                 continue
 
             abs_path = self.working_dir / path
+
+            if target_hash is None and not abs_path.exists():
+                continue
+
             if not abs_path.exists() or not abs_path.is_file():
                 raise RepositoryError(f'Checkout aborted: tracked path changed on disk: {path}')
 
