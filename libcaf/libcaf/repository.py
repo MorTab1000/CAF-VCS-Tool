@@ -3,6 +3,7 @@
 import uuid
 import os
 import shutil
+import tempfile
 from collections import deque
 from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass
@@ -686,40 +687,36 @@ class Repository:
         if not move_pairs:
             return
 
-        # Create a hidden temp directory inside the .caf folder
-        tmp_dir = self.objects_dir().parent / 'tmp_renames'
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-
         safe_moves: list[tuple[Path, Path, Path]] = []
+        
+        
+        caf_dir = self.objects_dir().parent
 
-        for src_rel, dst_rel in move_pairs:
-            src_abs = self.working_dir / src_rel
-            if not src_abs.exists():
-                continue
+        with tempfile.TemporaryDirectory(dir=caf_dir, prefix='tmp_renames_') as tmp_dir_name:
+            tmp_dir = Path(tmp_dir_name)
 
-            tmp_path = tmp_dir / uuid.uuid4().hex
-            os.rename(src_abs, tmp_path)
-            
-            safe_moves.append((tmp_path, dst_rel, src_abs.parent))
+            for src_rel, dst_rel in move_pairs:
+                src_abs = self.working_dir / src_rel
+                if not src_abs.exists():
+                    continue
 
-        for tmp_path, dst_rel, original_parent in safe_moves:
-            dst_abs = self.working_dir / dst_rel
-            os.makedirs(dst_abs.parent, exist_ok=True)
+                tmp_path = tmp_dir / uuid.uuid4().hex
+                os.rename(src_abs, tmp_path)
+                
+                safe_moves.append((tmp_path, dst_rel, src_abs.parent))
 
-            if dst_abs.exists():
-                if dst_abs.is_dir():
-                    shutil.rmtree(dst_abs)
-                else:
-                    dst_abs.unlink()
+            for tmp_path, dst_rel, original_parent in safe_moves:
+                dst_abs = self.working_dir / dst_rel
+                os.makedirs(dst_abs.parent, exist_ok=True)
 
-            os.rename(tmp_path, dst_abs)
-            self._cleanup_empty_parents(original_parent)
+                if dst_abs.exists():
+                    if dst_abs.is_dir():
+                        shutil.rmtree(dst_abs)
+                    else:
+                        dst_abs.unlink()
 
-        # Cleanup the temp directory
-        try:
-            tmp_dir.rmdir()
-        except OSError:
-            raise RepositoryError('Failed to clean up temporary rename directory. Please check and remove: ' + str(tmp_dir))
+                os.rename(tmp_path, dst_abs)
+                self._cleanup_empty_parents(original_parent)
 
     def _apply_pass3_writes(self, flattened_diffs: Sequence[tuple[Diff, Path]],
                             target_blob_map: dict[Path, HashRef]) -> None:
