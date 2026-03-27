@@ -187,6 +187,30 @@ def test_checkout_aborts_when_untracked_file_in_the_way_of_addition(temp_repo: R
     assert temp_repo.head_commit() == commit_ref1
 
 
+def test_checkout_handles_chained_renames_safely(temp_repo: Repository) -> None:
+    file_a = temp_repo.working_dir / 'a.txt'
+    file_b = temp_repo.working_dir / 'b.txt'
+    file_a.write_text('content A')
+    file_b.write_text('content B')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Base commit')
+
+    file_c = temp_repo.working_dir / 'c.txt'
+    file_b.rename(file_c)  
+    file_a.rename(file_b)  
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Chained rename')
+
+    temp_repo.checkout(commit_ref1)
+    assert file_a.exists() and file_a.read_text() == 'content A'
+    assert file_b.exists() and file_b.read_text() == 'content B'
+    assert not file_c.exists()
+
+    temp_repo.checkout(commit_ref2)
+
+    assert not file_a.exists()
+    assert file_b.exists() and file_b.read_text() == 'content A' # A became B
+    assert file_c.exists() and file_c.read_text() == 'content B' # B became C
+
+
 def test_checkout_aborts_when_untracked_file_in_the_way_of_rename(temp_repo: Repository) -> None:
     source_file = temp_repo.working_dir / 'old_name.txt'
     source_file.write_text('file data')
@@ -233,3 +257,25 @@ def test_checkout_deletions_preserve_untracked_files_in_removed_directories(temp
     assert config_dir.exists()
     assert untracked_file.read_text() == untracked_content
     assert temp_repo.head_commit() == commit_ref1
+
+def test_checkout_handles_direct_swap_safely(temp_repo: Repository) -> None:
+    file_a = temp_repo.working_dir / 'a.txt'
+    file_b = temp_repo.working_dir / 'b.txt'
+    file_a.write_text('content A')
+    file_b.write_text('content B')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Base commit')
+
+    temp_file = temp_repo.working_dir / 'temp.txt'
+    file_a.rename(temp_file)
+    file_b.rename(file_a)
+    temp_file.rename(file_b)
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Swap A and B')
+
+    temp_repo.checkout(commit_ref1)
+    assert file_a.read_text() == 'content A'
+    assert file_b.read_text() == 'content B'
+
+    temp_repo.checkout(commit_ref2)
+
+    assert file_a.read_text() == 'content B'
+    assert file_b.read_text() == 'content A'
