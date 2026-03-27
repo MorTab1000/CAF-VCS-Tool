@@ -1,5 +1,6 @@
 """libcaf repository management."""
 
+import uuid
 import os
 import shutil
 from collections import deque
@@ -671,24 +672,44 @@ class Repository:
                     self._cleanup_empty_parents(abs_path.parent)
 
     def _apply_pass2_renames(self, move_pairs: Sequence[tuple[Path, Path]]) -> None:
-        """Apply rename pass using O(1) filesystem moves."""
-        for src_rel, dst_rel in move_pairs:
-            src_abs = self.working_dir / src_rel
-            dst_abs = self.working_dir / dst_rel
+            """Apply rename pass using a safe 2-phase temp shuffle to prevent chained move data loss."""
+            if not move_pairs:
+                return
 
-            if not src_abs.exists():
-                continue
+            # Create a hidden temp directory inside the .caf folder
+            tmp_dir = self.objects_dir().parent / 'tmp_renames'
+            tmp_dir.mkdir(parents=True, exist_ok=True)
 
-            os.makedirs(dst_abs.parent, exist_ok=True)
+            safe_moves: list[tuple[Path, Path, Path]] = []
 
-            if dst_abs.exists():
-                if dst_abs.is_dir():
-                    shutil.rmtree(dst_abs)
-                else:
-                    dst_abs.unlink()
+            for src_rel, dst_rel in move_pairs:
+                src_abs = self.working_dir / src_rel
+                if not src_abs.exists():
+                    continue
 
-            os.rename(src_abs, dst_abs)
-            self._cleanup_empty_parents(src_abs.parent)
+                tmp_path = tmp_dir / uuid.uuid4().hex
+                os.rename(src_abs, tmp_path)
+                
+                safe_moves.append((tmp_path, dst_rel, src_abs.parent))
+
+            for tmp_path, dst_rel, original_parent in safe_moves:
+                dst_abs = self.working_dir / dst_rel
+                os.makedirs(dst_abs.parent, exist_ok=True)
+
+                if dst_abs.exists():
+                    if dst_abs.is_dir():
+                        shutil.rmtree(dst_abs)
+                    else:
+                        dst_abs.unlink()
+
+                os.rename(tmp_path, dst_abs)
+                self._cleanup_empty_parents(original_parent)
+
+            # Cleanup the temp directory
+            try:
+                tmp_dir.rmdir()
+            except OSError:
+                raise RepositoryError('Failed to clean up temporary rename directory. Please check and remove: ' + str(tmp_dir))
 
     def _apply_pass3_writes(self, flattened_diffs: Sequence[tuple[Diff, Path]],
                             target_blob_map: dict[Path, HashRef]) -> None:
@@ -922,13 +943,11 @@ def flatten_diffs_with_paths(initial_diffs: Sequence[Diff], initial_parent_path:
 def pair_moves(flattened_diffs: Sequence[tuple[Diff, Path]]) -> list[tuple[Path, Path]]:
     """Extract source/destination path pairs for moved records."""
     path_by_diff_id = {id(diff): path for diff, path in flattened_diffs}
-    move_pairs: list[tuple[Path, Path]] = []
-    seen_pairs: set[tuple[Path, Path]] = set()
+    
+    move_pairs_dict: dict[tuple[Path, Path], None] = {}
 
     for diff, dst_path in flattened_diffs:
-        if not isinstance(diff, MovedFromDiff):
-            continue
-        if diff.moved_from is None:
+        if not isinstance(diff, MovedFromDiff) or diff.moved_from is None:
             continue
 
         src_path = path_by_diff_id.get(id(diff.moved_from))
@@ -936,10 +955,6 @@ def pair_moves(flattened_diffs: Sequence[tuple[Diff, Path]]) -> list[tuple[Path,
             continue
 
         pair = (src_path, dst_path)
-        if pair in seen_pairs:
-            continue
+        move_pairs_dict[pair] = None 
 
-        seen_pairs.add(pair)
-        move_pairs.append(pair)
-
-    return move_pairs
+    return list(move_pairs_dict.keys())
