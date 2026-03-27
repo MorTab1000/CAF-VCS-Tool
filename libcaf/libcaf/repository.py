@@ -862,15 +862,17 @@ class Repository:
         return self.repo_path() / HEAD_FILE
     
     @requires_repo
-    def update_head(self, commit_ref: HashRef) -> None:
+    def update_head(self, target_ref: Ref) -> None:
         """
-        Update the HEAD file to point to a specific commit. 
-        This results in a 'detached HEAD' state if HEAD previously pointed to a branch.
+        Update the HEAD file to point to a specific reference.
+        
+        If a symbolic reference (like a branch name) is provided, HEAD attaches to the branch.
+        If a direct commit hash is provided, it results in a 'detached HEAD' state.
 
-        :param commit_ref: The HashRef of the commit to write into HEAD.
+        :param target_ref: The Ref (SymRef or HashRef) to write into HEAD.
         :raises RepositoryNotFoundError: If the repository is not initialized.
         """
-        write_ref(self.head_file(), commit_ref)
+        write_ref(self.head_file(), target_ref)
 
     @requires_repo
     def merge(self, target_ref: Ref, source_ref: Ref) -> tuple[MergeResult, HashRef]:
