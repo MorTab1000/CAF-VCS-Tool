@@ -195,8 +195,8 @@ def test_checkout_handles_chained_renames_safely(temp_repo: Repository) -> None:
     commit_ref1 = temp_repo.commit_working_dir('Author', 'Base commit')
 
     file_c = temp_repo.working_dir / 'c.txt'
-    file_b.rename(file_c)  
-    file_a.rename(file_b)  
+    file_b.rename(file_c)
+    file_a.rename(file_b) 
     commit_ref2 = temp_repo.commit_working_dir('Author', 'Chained rename')
 
     temp_repo.checkout(commit_ref1)
@@ -258,6 +258,7 @@ def test_checkout_deletions_preserve_untracked_files_in_removed_directories(temp
     assert untracked_file.read_text() == untracked_content
     assert temp_repo.head_commit() == commit_ref1
 
+
 def test_checkout_handles_direct_swap_safely(temp_repo: Repository) -> None:
     file_a = temp_repo.working_dir / 'a.txt'
     file_b = temp_repo.working_dir / 'b.txt'
@@ -279,3 +280,22 @@ def test_checkout_handles_direct_swap_safely(temp_repo: Repository) -> None:
 
     assert file_a.read_text() == 'content B'
     assert file_b.read_text() == 'content A'
+
+
+def test_checkout_allows_missing_file_if_target_deletes_it(temp_repo: Repository) -> None:
+    target_file = temp_repo.working_dir / 'obsolete.txt'
+    target_file.write_text('old data')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Add file')
+
+    target_file.unlink()
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Remove file')
+
+    temp_repo.checkout(commit_ref1)
+    assert target_file.exists()
+
+    target_file.unlink()
+
+    temp_repo.checkout(commit_ref2)
+
+    assert not target_file.exists()
+    assert temp_repo.head_commit() == commit_ref2
