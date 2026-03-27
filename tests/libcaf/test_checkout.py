@@ -299,3 +299,27 @@ def test_checkout_allows_missing_file_if_target_deletes_it(temp_repo: Repository
 
     assert not target_file.exists()
     assert temp_repo.head_commit() == commit_ref2
+
+
+def test_checkout_aborts_when_untracked_file_blocks_directory(temp_repo: Repository) -> None:
+    base_file = temp_repo.working_dir / 'base.txt'
+    base_file.write_text('base')
+    commit_ref1 = temp_repo.commit_working_dir('Author', 'Base commit')
+
+    nested_dir = temp_repo.working_dir / 'docs'
+    nested_dir.mkdir()
+    nested_file = nested_dir / 'notes.txt'
+    nested_file.write_text('nested data')
+    commit_ref2 = temp_repo.commit_working_dir('Author', 'Add nested file')
+
+    temp_repo.checkout(commit_ref1)
+    
+    blocking_file = temp_repo.working_dir / 'docs'
+    blocking_file.write_text('I am a file, not a directory')
+
+    with raises(RepositoryError):
+        temp_repo.checkout(commit_ref2)
+
+    assert blocking_file.is_file()
+    assert blocking_file.read_text() == 'I am a file, not a directory'
+    assert temp_repo.head_commit() == commit_ref1
