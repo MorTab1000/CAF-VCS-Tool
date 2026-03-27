@@ -768,6 +768,13 @@ class Repository:
         target_hash = self.resolve_ref(target_ref)
         if target_hash is None:
             raise RefError(f'Cannot resolve reference {target_ref}')
+        safe_ref = target_ref
+        if type(target_ref) is str:  # Exact type match to avoid trapping existing HashRef/SymRef
+            if len(target_ref) == HASH_LENGTH and all(c in HASH_CHARSET for c in target_ref):
+                safe_ref = HashRef(target_ref)
+            else:
+                # Assuming if it's not a hash, it's meant to be a symbolic branch reference
+                safe_ref = SymRef(target_ref)
 
         current_hash = self.head_commit()
         if current_hash == target_hash:
@@ -795,7 +802,7 @@ class Repository:
         self._apply_pass2_renames(move_pairs)
         self._apply_pass3_writes(flattened_diffs, target_blob_map)
 
-        self.update_head(target_ref)
+        self.update_head(safe_ref)
     
     @requires_repo
     def tags_dir(self) -> Path:
