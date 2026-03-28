@@ -887,7 +887,6 @@ class Repository:
         return self.repo_path() / HEAD_FILE
     
     @requires_repo
-
     def merge_head_file(self) -> Path:
         """Get the path to the MERGE_HEAD file within the repository.
                 
