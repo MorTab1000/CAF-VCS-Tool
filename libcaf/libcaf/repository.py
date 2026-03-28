@@ -19,7 +19,6 @@ from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LEN
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree, hash_file, open_content_for_reading
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
 from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, compute_merge_tree, three_way_merge, is_binary_blob
-from sequences import prepare_lines_sequence
 from enum import Enum, auto
 
 
