@@ -1,5 +1,6 @@
 """libcaf repository management."""
 
+from contextlib import ExitStack
 import os
 import shutil
 import tempfile
@@ -10,13 +11,14 @@ from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import wraps
-from typing import Concatenate, Optional
+from typing import Concatenate, Optional, Tuple
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
                         OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE)
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree, hash_file, open_content_for_reading
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
-from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, compute_merge_tree
+from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, compute_merge_tree, is_binary_blob, three_way_merge
+from libcaf.sequences import prepare_lines_sequence
 from enum import Enum, auto
 
 
@@ -953,6 +955,42 @@ class Repository:
         new_commit_hash = hash_object(new_commit)
         return MergeReport(MergeResult.MERGE_CREATED, new_commit_hash, auto_merged, conflicts)
 
+    @requires_repo
+    def apply_conflicts_to_disk(self, conflicts: list[Tuple[str, MergeConflict]], source_hash: str) -> None:
+        """
+        Apply conflict markers to the working directory for a list of conflicts.
+        This is used to write the conflict state to disk after a merge with conflicts.
+
+        :param conflicts: A list of tuples containing the file path and MergeConflict details.
+        :param source_hash: The hash of the source commit involved in the merge conflict.
+        """
+        objects_dir = self.objects_dir()
+        for path_str, conflict in conflicts:
+            abs_path = self.working_dir / path_str
+            abs_path.parent.mkdir(parents=True, exist_ok=True)
+            if conflict.conflict_type == "content":
+                if not is_binary_blob(objects_dir / conflict.ours_hash[:2] / conflict.ours_hash) and not is_binary_blob(objects_dir / conflict.theirs_hash[:2] / conflict.theirs_hash):
+                    with ExitStack() as file_stack:
+                        base_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / conflict.base_hash[:2] / conflict.base_hash)) if conflict.base_hash else []
+                        ours_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / conflict.ours_hash[:2] / conflict.ours_hash))
+                        theirs_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / conflict.theirs_hash[:2] / conflict.theirs_hash))
+                        three_way_merge(base_seq, ours_seq, theirs_seq, abs_path)
+            elif conflict.conflict_type == "modify/delete":
+                if not conflict.ours_hash and conflict.theirs_hash:
+                    restore_path_to_blob(objects_dir, conflict.theirs_hash, abs_path)
+
+            elif conflict.conflict_type == "type":
+                # FILE VS DIR CONFLICT: We must preserve the file side of the conflict
+                # by appending a branch suffix, leaving the base name free for the directory.
+                if conflict.ours_hash and conflict.ours_type == TreeRecordType.BLOB:
+                    conflict_dest = self.working_dir / f"{path_str}~HEAD"
+                    if abs_path.exists() and abs_path.is_file():
+                        abs_path.rename(conflict_dest)
+                if conflict.theirs_hash and conflict.theirs_type == TreeRecordType.BLOB:
+                    conflict_dest = self.working_dir / f"{path_str}~MERGE_HEAD"
+                    # Their file isn't on our disk yet. We MUST extract it from the DB.
+                    restore_path_to_blob(objects_dir, conflict.theirs_hash, conflict_dest)
+        write_ref(self.merge_head_file(), HashRef(source_hash))
 
 def branch_ref(branch: str) -> SymRef:
     """Create a symbolic reference for a branch name.
@@ -1001,3 +1039,7 @@ def pair_moves(flattened_diffs: Sequence[tuple[Diff, Path]]) -> list[tuple[Path,
         move_pairs_dict[pair] = None 
 
     return list(move_pairs_dict.keys())
+
+
+def restore_blob_to_path(objects_dir: Path, blob_hash: str, destination: Path) -> None:
+    pass
