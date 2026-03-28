@@ -1,7 +1,7 @@
 from libcaf import Tree, TreeRecord, TreeRecordType
 from libcaf.plumbing import load_tree
 from libcaf.repository import Repository
-from libcaf.merge_algo import merge_trees, MergeConflict, execute_merge, three_way_merge
+from libcaf.merge_algo import merge_trees, MergeConflict, compute_merge_tree, three_way_merge
 from pathlib import Path
 import hashlib
 
@@ -141,14 +141,14 @@ def test_directory_recursion() -> None:
 
 
 
-def test_execute_merge_clean_files(temp_repo: Repository) -> None:
+def test_compute_merge_tree_clean_files(temp_repo: Repository) -> None:
     plan = {
     "main.py": TreeRecord(TreeRecordType.BLOB, "hash_main", "main.py"),
     "README.md": TreeRecord(TreeRecordType.BLOB, "hash_readme", "README.md")
     }
 
 
-    new_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, temp_repo.objects_dir(), plan)
+    new_tree_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), plan)
    
     assert new_tree_hash is not None
     assert conflicts == []
@@ -160,7 +160,7 @@ def test_execute_merge_clean_files(temp_repo: Repository) -> None:
     assert (temp_repo.objects_dir() / folder_prefix / new_tree_hash).exists()
 
 
-def test_execute_merge_nested_directories(temp_repo: Repository) -> None:
+def test_compute_merge_nested_directories(temp_repo: Repository) -> None:
     plan = {
         "README.md": TreeRecord(TreeRecordType.BLOB, "hash_readme", "README.md"),
         "src": {
@@ -170,7 +170,7 @@ def test_execute_merge_nested_directories(temp_repo: Repository) -> None:
     }
 
 
-    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, temp_repo.objects_dir(), plan)
+    root_tree_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), plan)
 
 
     assert root_tree_hash is not None
@@ -192,7 +192,7 @@ def test_execute_merge_nested_directories(temp_repo: Repository) -> None:
 
 
 
-def test_execute_merge_with_structural_conflict(temp_repo: Repository) -> None:
+def test_compute_merge_with_structural_conflict(temp_repo: Repository) -> None:
     conflict_obj = MergeConflict(
         conflict_type="modify/delete",
         base_hash="hash_base",
@@ -204,7 +204,7 @@ def test_execute_merge_with_structural_conflict(temp_repo: Repository) -> None:
             "broken_file.txt": conflict_obj
         }
     }
-    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, temp_repo.objects_dir(), plan)
+    root_tree_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), plan)
 
 
     assert root_tree_hash is None
@@ -213,8 +213,7 @@ def test_execute_merge_with_structural_conflict(temp_repo: Repository) -> None:
 
 
 
-
-def test_execute_merge_with_type_conflict(temp_repo: Repository) -> None:  
+def test_compute_merge_with_type_conflict(temp_repo: Repository) -> None:  
     conflict_obj = MergeConflict(
         conflict_type="type",
         base_hash=None,
@@ -223,7 +222,7 @@ def test_execute_merge_with_type_conflict(temp_repo: Repository) -> None:
     plan = {
         "conflict_item": conflict_obj
     }
-    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, temp_repo.objects_dir(), plan)
+    root_tree_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), plan)
 
 
     assert root_tree_hash is None
@@ -231,10 +230,9 @@ def test_execute_merge_with_type_conflict(temp_repo: Repository) -> None:
     assert auto_merged == {}
 
 
-def test_execute_merge_empty_plan(temp_repo: Repository) -> None:
+def test_compute_merge_empty_plan(temp_repo: Repository) -> None:
     plan = {}
-    root_tree_hash, conflicts, auto_merged = execute_merge(temp_repo.working_dir, temp_repo.objects_dir(), plan)
-
+    root_tree_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), plan)
 
     assert root_tree_hash is not None
     assert len(conflicts) == 0
@@ -244,7 +242,7 @@ def test_execute_merge_empty_plan(temp_repo: Repository) -> None:
     assert (temp_repo.objects_dir() / root_folder_prefix / root_tree_hash).exists()
 
 
-def test_execute_merge_complex_structure(temp_repo: Repository) -> None:
+def test_compute_merge_complex_structure(temp_repo: Repository) -> None:
     """
     Test a full merge of a directory structure.
     - file1: Clean merge
@@ -254,23 +252,17 @@ def test_execute_merge_complex_structure(temp_repo: Repository) -> None:
     repo_dir = temp_repo.working_dir
     objects_dir = repo_dir / ".caf" / "objects"
 
-
-    # 1. Create dummy hashes for our blobs
-
     # File 1: Clean merge (Both modified different lines)
     h1_base = quick_blob(objects_dir, b"line1\nline2\nline3\n")
     h1_ours = quick_blob(objects_dir, b"line1 modified\nline2\nline3\n")
     h1_theirs = quick_blob(objects_dir, b"line1\nline2\nline3 modified\n")
-
 
     # File 2: Overlapping Conflict
     h2_base = quick_blob(objects_dir, b"common\n")
     h2_ours = quick_blob(objects_dir, b"change A\n")
     h2_theirs = quick_blob(objects_dir, b"change B\n")
 
-
-    # 2. Construct the MergeResult (the dictionary your traversal expects)
-    merge_result = {
+    merge_plan = {
         "file1.txt": MergeConflict(h1_base, h1_ours, h1_theirs, "content"),
         "file2.txt": MergeConflict(h2_base, h2_ours, h2_theirs, "content"),
         "folder": {
@@ -280,37 +272,21 @@ def test_execute_merge_complex_structure(temp_repo: Repository) -> None:
 
 
     # 3. Run the engine
-    root_hash, conflicts, auto_merged = execute_merge(repo_dir, temp_repo.objects_dir(), merge_result)
+    root_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), merge_plan)
 
 
-    # 4. Assertions
     # Root should be None because file2.txt has a conflict
     assert root_hash is None
    
     # file1.txt should be in auto_merged
     assert "file1.txt" in auto_merged
    
-    f1_content = (repo_dir / "file1.txt").read_bytes()
+    f1_content = (objects_dir / auto_merged["file1.txt"][:2] / auto_merged["file1.txt"]).read_bytes()
     assert b"line1 modified\n" in f1_content
     assert b"line2\n" in f1_content
     assert b"line3 modified\n" in f1_content
    
-    # Check File 2 (Full Conflict Body)
-    f2_content = (repo_dir / "file2.txt").read_bytes()
-    expected_f2 = (
-        b"<<<<<<< HEAD (ours)\n"
-        b"change A\n"
-        b"=======\n"
-        b"change B\n"
-        b">>>>>>> MERGE_HEAD (theirs)\n"
-    )
-    assert f2_content == expected_f2
-
-
-    # --- VERIFY OBJECT STORE (The Merkle Tree) ---
-   
-
-
+    assert "file2.txt" not in auto_merged
     assert conflicts == [("file2.txt", MergeConflict(h2_base, h2_ours, h2_theirs, "content"))]
 
 
@@ -319,7 +295,6 @@ def test_three_way_merge_success(temp_repo_dir: Path) -> None:
     base = [b"A\n", b"B\n", b"C\n"]
     ours = [b"A (ours)\n", b"B\n", b"C\n"]
     theirs = [b"A\n", b"B\n", b"C (theirs)\n"]
-
 
     output_path = temp_repo_dir / "merged_file.txt"
    
