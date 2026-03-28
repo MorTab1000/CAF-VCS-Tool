@@ -61,7 +61,9 @@ class MergeConflict:
     base_hash: Optional[str]
     ours_hash: Optional[str]
     theirs_hash: Optional[str]
-    conflict_type: str  # "content", "modify/delete", or "type"
+    conflict_type: str  # "content", "modify/delete", or "type",
+    ours_type: Optional[TreeRecordType]
+    theirs_type: Optional[TreeRecordType]
 
 MergePlan = Dict[str, Union[TreeRecord, MergeConflict, dict]]
 
@@ -112,7 +114,7 @@ def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash:
                 conflict_type = "type"
             else:
                 conflict_type = "content"
-            result[path] = MergeConflict(b_hash, o_hash, t_hash, conflict_type)
+            result[path] = MergeConflict(b_hash, o_hash, t_hash, conflict_type, o_type, t_type)
 
     return result
     

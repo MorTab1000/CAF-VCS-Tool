@@ -76,7 +76,7 @@ def test_content_conflict() -> None:
     result = merge_trees("base_root", "ours_root", "theirs_root", lambda h: fake_db[h])
 
 
-    assert result == {"file.txt": MergeConflict("h1", "h2", "h3", "content")}
+    assert result == {"file.txt": MergeConflict("h1", "h2", "h3", "content", TreeRecordType.BLOB, TreeRecordType.BLOB)}
    
    
 
@@ -93,7 +93,7 @@ def test_modify_delete_conflict() -> None:
 
     result = merge_trees("base_root", "ours_root", "theirs_root", lambda h: fake_db[h])
    
-    assert result == {"file.txt": MergeConflict("h1", "h2", None, "modify/delete")}
+    assert result == {"file.txt": MergeConflict("h1", "h2", None, "modify/delete", TreeRecordType.BLOB, None)}
 
 
 
@@ -108,7 +108,7 @@ def test_file_dir_conflict() -> None:
 
     result = merge_trees("base_root", "ours_root", "theirs_root", lambda h: fake_db[h])
    
-    assert result == {"logger": MergeConflict(None, "h_file", "h_dir", "type")}
+    assert result == {"logger": MergeConflict(None, "h_file", "h_dir", "type", TreeRecordType.BLOB, TreeRecordType.TREE)}
 
 
 
@@ -197,7 +197,9 @@ def test_compute_merge_with_structural_conflict(temp_repo: Repository) -> None:
         conflict_type="modify/delete",
         base_hash="hash_base",
         ours_hash="hash_ours",
-        theirs_hash=None)
+        theirs_hash=None,
+        ours_type=TreeRecordType.BLOB,
+        theirs_type=None)
     plan = {
         "clean_file.txt": TreeRecord(TreeRecordType.BLOB, "hash_clean", "clean_file.txt"),
         "nested": {
@@ -218,7 +220,9 @@ def test_compute_merge_with_type_conflict(temp_repo: Repository) -> None:
         conflict_type="type",
         base_hash=None,
         ours_hash="hash_blob",
-        theirs_hash="hash_tree")
+        theirs_hash="hash_tree",
+        ours_type=TreeRecordType.BLOB,
+        theirs_type=TreeRecordType.TREE)
     plan = {
         "conflict_item": conflict_obj
     }
@@ -263,8 +267,8 @@ def test_compute_merge_complex_structure(temp_repo: Repository) -> None:
     h2_theirs = quick_blob(objects_dir, b"change B\n")
 
     merge_plan = {
-        "file1.txt": MergeConflict(h1_base, h1_ours, h1_theirs, "content"),
-        "file2.txt": MergeConflict(h2_base, h2_ours, h2_theirs, "content"),
+        "file1.txt": MergeConflict(h1_base, h1_ours, h1_theirs, "content", TreeRecordType.BLOB, TreeRecordType.BLOB), # Should auto-merge
+        "file2.txt": MergeConflict(h2_base, h2_ours, h2_theirs, "content", TreeRecordType.BLOB, TreeRecordType.BLOB), # Should conflict
         "folder": {
             "nested.txt": TreeRecord(TreeRecordType.BLOB, h1_ours, "nested.txt") # No conflict here
         }
@@ -287,7 +291,7 @@ def test_compute_merge_complex_structure(temp_repo: Repository) -> None:
     assert b"line3 modified\n" in f1_content
    
     assert "file2.txt" not in auto_merged
-    assert conflicts == [("file2.txt", MergeConflict(h2_base, h2_ours, h2_theirs, "content"))]
+    assert conflicts == [("file2.txt", MergeConflict(h2_base, h2_ours, h2_theirs, "content", TreeRecordType.BLOB, TreeRecordType.BLOB))]
 
 
 def test_three_way_merge_success(temp_repo_dir: Path) -> None:
