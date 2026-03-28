@@ -1,3 +1,5 @@
+
+import tempfile
 from collections import deque
 from pathlib import Path
 from dataclasses import dataclass
@@ -115,7 +117,7 @@ def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash:
     return result
     
 
-def execute_merge(repo_dir: Path, objects_dir: Path, merge_result: MergePlan, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str]]:
+def compute_merge_tree(objects_dir: Path, merge_result: MergePlan, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str]]:
     records = {}
     conflicts = []
     auto_merged = {}
@@ -157,16 +159,21 @@ def execute_merge(repo_dir: Path, objects_dir: Path, merge_result: MergePlan, cu
                                 base_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / value.base_hash[:2] / value.base_hash)) if value.base_hash else []
                                 ours_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / value.ours_hash[:2] / value.ours_hash))
                                 theirs_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / value.theirs_hash[:2] / value.theirs_hash))
-                                output_path = repo_dir / full_path
-                                output_path.parent.mkdir(parents=True, exist_ok=True)
-                                is_clean = three_way_merge(base_seq, ours_seq, theirs_seq, output_path)
-                                if is_clean:
-                                    merged_hash = hash_and_save_blob(objects_dir, repo_dir / full_path)
-                                    records[name] = TreeRecord(TreeRecordType.BLOB, merged_hash, name)
-                                    auto_merged[full_path] = merged_hash
-                                else:
-                                    conflicts.append((full_path, value))
-                                    has_conflict_in_dir = True
+                                with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                                    temp_file_path = Path(temp_file.name)
+                                try: 
+                                    is_clean = three_way_merge(base_seq, ours_seq, theirs_seq, temp_file_path)
+                                    if is_clean:                                                                  
+                                        merged_hash =  hash_and_save_blob(objects_dir, temp_file_path)
+                                        print(f"Auto-merged {full_path} with hash {merged_hash}")
+                                        records[name] = TreeRecord(TreeRecordType.BLOB, merged_hash, name)
+                                        auto_merged[full_path] = merged_hash                                        
+                                    else:
+                                        conflicts.append((full_path, value))
+                                        has_conflict_in_dir = True
+                                finally:
+                                            if temp_file_path.exists():
+                                                temp_file_path.unlink() 
                                
                     else:
                         conflicts.append((full_path, value))
@@ -184,7 +191,6 @@ def execute_merge(repo_dir: Path, objects_dir: Path, merge_result: MergePlan, cu
     return root_hash, [], auto_merged # Return the hash of the root tree if no conflicts
 
 
-
 def three_way_merge(
     base_lines: Sequence[bytes],
     ours_lines: Sequence[bytes],
@@ -192,8 +198,8 @@ def three_way_merge(
     output_path: Path
 ) -> bool:
     """
-    Performs a pure 3-way text merge in memory.
-    Returns a boolean indicating if the merge was clean
+    Performs a 3-way text merge and streams the result directly to the output_path.
+    Returns a boolean indicating if the merge was clean (no conflicts).
     """
     merger = TrackingMerge3(base_lines, ours_lines, theirs_lines)
    
@@ -202,10 +208,8 @@ def three_way_merge(
         name_b=b"MERGE_HEAD (theirs)"
     )
 
-
     with open(output_path, 'wb') as f:
         f.writelines(merged_generator)
-
 
     is_clean = not merger.has_conflicts
     return is_clean
@@ -222,10 +226,11 @@ def is_binary_blob(blob_path: Path) -> bool:
     except OSError as e:
         raise IOError(f"Failed to read blob at {blob_path}: {e}")
 
+
 def hash_and_save_blob(objects_dir, file_path):
     blob = save_file_content(objects_dir, file_path)
     return blob.hash
-   
+
 
 class TrackingMerge3(Merge3):
     """
