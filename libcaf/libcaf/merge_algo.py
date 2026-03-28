@@ -165,15 +165,14 @@ def compute_merge_tree(objects_dir: Path, merge_result: MergePlan, current_path:
                                     is_clean = three_way_merge(base_seq, ours_seq, theirs_seq, temp_file_path)
                                     if is_clean:                                                                  
                                         merged_hash =  hash_and_save_blob(objects_dir, temp_file_path)
-                                        print(f"Auto-merged {full_path} with hash {merged_hash}")
                                         records[name] = TreeRecord(TreeRecordType.BLOB, merged_hash, name)
                                         auto_merged[full_path] = merged_hash                                        
                                     else:
                                         conflicts.append((full_path, value))
                                         has_conflict_in_dir = True
                                 finally:
-                                            if temp_file_path.exists():
-                                                temp_file_path.unlink() 
+                                    if temp_file_path.exists():
+                                        temp_file_path.unlink() 
                                
                     else:
                         conflicts.append((full_path, value))
