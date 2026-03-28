@@ -1,6 +1,5 @@
 """libcaf repository management."""
 
-from contextlib import ExitStack
 import os
 import shutil
 import tempfile
@@ -11,14 +10,13 @@ from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import wraps
-from pathlib import Path
-from typing import Concatenate, Optional, Tuple
+from typing import Concatenate, Optional
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
                         OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE)
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree, hash_file, open_content_for_reading
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
-from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, compute_merge_tree, three_way_merge, is_binary_blob
+from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, compute_merge_tree
 from enum import Enum, auto
 
 
@@ -932,13 +930,13 @@ class Repository:
 
 
         if lca is None:
-             raise NotImplementedError("Unrelated histories is not supported")
+            raise NotImplementedError("Unrelated histories is not supported")
 
         if lca == source_hash:
-             return MergeReport(MergeResult.UP_TO_DATE, target_hash)
+            return MergeReport(MergeResult.UP_TO_DATE, target_hash)
 
         if lca == target_hash:
-             return MergeReport(MergeResult.FAST_FORWARD, source_hash)
+            return MergeReport(MergeResult.FAST_FORWARD, source_hash)
         
         # Perform a three-way merge using the LCA commit as the common ancestor
 
@@ -947,7 +945,7 @@ class Repository:
         merge_plan = merge_trees(lca_commit.tree_hash, target_commit.tree_hash, source_commit.tree_hash,
                                  lambda h: load_tree(self.objects_dir(), h))
         root_hash, conflicts, auto_merged = compute_merge_tree(self.objects_dir(), merge_plan)
-        if  conflicts:
+        if conflicts:
             return MergeReport(MergeResult.CONFLICTS, target_hash, auto_merged, conflicts)
         
         new_commit = Commit(root_hash, author, f'Merge {source_ref} into {target_ref}', int(datetime.now().timestamp()), [target_hash, source_hash])
