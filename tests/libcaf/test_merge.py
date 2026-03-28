@@ -182,7 +182,7 @@ def test_merge_3way_clean_different_files(temp_repo: Repository) -> None:
 
     report = temp_repo.merge(target_hash, source_hash, 'Test Author')
 
-    assert report.status == MergeResult.MERGE_CREATED   
+    assert report.status == MergeResult.MERGE_CREATED
 
     merged_commit = load_commit(temp_repo.objects_dir(), report.commit_hash)
     assert report.commit_hash == hash_object(merged_commit)
