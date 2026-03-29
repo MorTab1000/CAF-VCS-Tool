@@ -17,5 +17,6 @@ int open_content_for_reading(const std::string& content_root_dir, const std::str
 int open_content_for_writing(const std::string& content_root_dir, const std::string& content_hash);
 
 void delete_content(const std::string& content_root_dir, const std::string& content_hash);
+void restore_blob_to_path(const std::string& content_root_dir, const std::string& hash, const std::string& dest_path);
 
 #endif // CAF_H

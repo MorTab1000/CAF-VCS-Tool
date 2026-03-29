@@ -81,6 +81,15 @@ def load_tree(root_dir: str | Path, hash_value: str) -> Tree:
 
     return _libcaf.load_tree(root_dir, hash_value)
 
+def restore_blob_to_path(root_dir: str | Path, hash_value: str, dest_path: str | Path) -> None:
+    if isinstance(root_dir, Path):
+        root_dir = str(root_dir)
+
+    if isinstance(dest_path, Path):
+        dest_path = str(dest_path)
+
+    _libcaf.restore_blob_to_path(root_dir, hash_value, dest_path)
+    
 
 __all__ = [
     'delete_content',
