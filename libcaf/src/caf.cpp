@@ -333,10 +333,6 @@ void lock_file_with_timeout(int fd, int operation, int timeout_sec){
 }
 
 void restore_blob_to_path(const std::string& content_root_dir, const std::string& hash, const std::string& dest_path) {
-    std::string src_path;
-    
-    create_content_path(content_root_dir, hash, src_path);
-    
     std::filesystem::path dest(dest_path);
     if (dest.has_parent_path()) {
         std::error_code ec;
@@ -345,6 +341,20 @@ void restore_blob_to_path(const std::string& content_root_dir, const std::string
             throw std::runtime_error("Failed to create parent directories: " + ec.message());
         }
     }
-    
-    copy_file(src_path, dest_path);
+
+    int src_fd = open_content_for_reading(content_root_dir, hash);
+
+    std::string src_path;
+    create_content_path(content_root_dir, hash, src_path);
+
+    try {
+        copy_file(src_path, dest_path);
+    } catch (const std::exception& e) {
+        flock(src_fd, LOCK_UN);
+        close(src_fd);
+        throw;
+    }
+
+    flock(src_fd, LOCK_UN);
+    close(src_fd);
 }
