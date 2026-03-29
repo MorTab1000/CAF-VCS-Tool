@@ -461,7 +461,7 @@ def test_apply_conflicts_modify_modify_same_file(temp_repo: Repository) -> None:
 
 
 def test_apply_conflicts_multiple_conflicts(temp_repo: Repository) -> None:
-    """  """
+    """ Test multiple conflicts of different types in the same merge."""
     _set_working_tree_files(temp_repo, {"a": "base a\n", "b": "base b\n", "c": "base c\n"})
     base_hash = temp_repo.commit_working_dir('Author', 'base commit')
     base_commit = load_commit(temp_repo.objects_dir(), base_hash)
