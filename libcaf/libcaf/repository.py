@@ -982,16 +982,18 @@ class Repository:
                     restore_blob_to_path(objects_dir, conflict.theirs_hash, abs_path)
 
             elif conflict.conflict_type == "type":
-                # FILE VS DIR CONFLICT: We must preserve the file side of the conflict
-                # by appending a branch suffix, leaving the base name free for the directory.
                 if conflict.ours_hash and conflict.ours_type == TreeRecordType.BLOB:
                     conflict_dest = self.working_dir / f"{path_str}~HEAD"
                     if abs_path.exists() and abs_path.is_file():
                         abs_path.rename(conflict_dest)
+                        
+                    if conflict.theirs_hash and conflict.theirs_type == TreeRecordType.TREE:
+                        self.extract_tree_to_disk(objects_dir, conflict.theirs_hash, abs_path)
+
                 if conflict.theirs_hash and conflict.theirs_type == TreeRecordType.BLOB:
                     conflict_dest = self.working_dir / f"{path_str}~MERGE_HEAD"
-                    # Their file isn't on our disk yet. We MUST extract it from the DB.
                     restore_blob_to_path(objects_dir, conflict.theirs_hash, conflict_dest)
+                
         write_ref(self.merge_head_file(), HashRef(source_hash))
 
 def branch_ref(branch: str) -> SymRef:
@@ -1041,3 +1043,24 @@ def pair_moves(flattened_diffs: Sequence[tuple[Diff, Path]]) -> list[tuple[Path,
         move_pairs_dict[pair] = None 
 
     return list(move_pairs_dict.keys())
+
+
+def extract_tree_to_disk(objects_dir: Path, tree_hash: str, dest_dir: Path) -> None:
+    """Extracts a Tree object from the database to the physical disk iteratively."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    stack = [(tree_hash, dest_dir)]
+    
+    while stack:
+        current_tree_hash, current_dest_dir = stack.pop()
+        tree = load_tree(objects_dir, current_tree_hash)
+        
+        for name, record in tree.records.items():
+            child_path = current_dest_dir / name
+            
+            if record.type == TreeRecordType.BLOB:
+                restore_blob_to_path(objects_dir, record.hash, child_path)
+                
+            elif record.type == TreeRecordType.TREE:
+                child_path.mkdir(parents=True, exist_ok=True)
+                stack.append((record.hash, child_path))
