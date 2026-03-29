@@ -331,3 +331,20 @@ void lock_file_with_timeout(int fd, int operation, int timeout_sec){
             throw std::runtime_error("Failed to acquire lock");
     }
 }
+
+void restore_blob_to_path(const std::string& content_root_dir, const std::string& hash, const std::string& dest_path) {
+    std::string src_path;
+    
+    create_content_path(content_root_dir, hash, src_path);
+    
+    std::filesystem::path dest(dest_path);
+    if (dest.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(dest.parent_path(), ec);
+        if (ec && ec != std::errc::file_exists) {
+            throw std::runtime_error("Failed to create parent directories: " + ec.message());
+        }
+    }
+    
+    copy_file(src_path, dest_path);
+}

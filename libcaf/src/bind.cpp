@@ -16,6 +16,7 @@ PYBIND11_MODULE(_libcaf, m) {
     m.def("open_content_for_writing", open_content_for_writing);
     m.def("delete_content", delete_content);
     m.def("open_content_for_reading", open_content_for_reading);
+    m.def("restore_blob_to_path", restore_blob_to_path);
 
     // hash_types
     m.def("hash_object", py::overload_cast<const Blob&>(&hash_object), py::arg("blob"));
