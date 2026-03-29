@@ -991,6 +991,8 @@ class Repository:
                     conflict_dest = self.working_dir / f"{path_str}~HEAD"
                     if abs_path.exists() and abs_path.is_file():
                         abs_path.rename(conflict_dest)
+                    else:
+                        restore_blob_to_path(objects_dir, conflict.ours_hash, conflict_dest)
                         
                     if conflict.theirs_hash and conflict.theirs_type == TreeRecordType.TREE:
                         extract_tree_to_disk(objects_dir, conflict.theirs_hash, abs_path)
