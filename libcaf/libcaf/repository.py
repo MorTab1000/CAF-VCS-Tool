@@ -964,6 +964,8 @@ class Repository:
         :param conflicts: A list of tuples containing the file path and MergeConflict details.
         :param source_hash: The hash of the source commit involved in the merge conflict.
         """
+        if not conflicts:
+            return
         objects_dir = self.objects_dir()
         for path_str, conflict in conflicts:
             abs_path = self.working_dir / path_str
