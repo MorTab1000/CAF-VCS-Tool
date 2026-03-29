@@ -2,7 +2,7 @@ import pytest
 import shutil
 from datetime import datetime
 from libcaf.repository import Repository, MergeResult, RepositoryError, branch_ref
-from libcaf.merge_algo import find_lca
+from libcaf.merge_algo import find_lca, MergeConflict, TreeRecordType
 from libcaf import Commit
 from libcaf.plumbing import save_commit, hash_object, load_commit, open_content_for_reading, load_tree
 
@@ -296,3 +296,266 @@ def test_merge_3way_with_conflicts(temp_repo: Repository) -> None:
     assert after_merge_text == before_merge_text
     assert '<<<<<<<' not in after_merge_text
     assert not temp_repo.merge_head_file().exists()
+
+
+def test_apply_conflicts_empty_conflicts(temp_repo: Repository) -> None:
+    """Applying an empty conflict list should be a no-op."""
+    
+    _set_working_tree_files(temp_repo, {
+        'file_a.txt': 'a\n',
+    })
+    source_hash = temp_repo.commit_working_dir('Author', 'source commit')
+    temp_repo.apply_conflicts_to_disk([], source_hash)
+    assert len(list(temp_repo.working_dir.iterdir())) == 2  # .caf + file_a.txt
+    assert not temp_repo.merge_head_file().exists()
+    assert (temp_repo.working_dir / 'file_a.txt').exists()
+    assert (temp_repo.working_dir / 'file_a.txt').read_text() == 'a\n'
+
+
+def test_apply_conflicts_modify_delete(temp_repo: Repository) -> None:
+    """Test modify/delete conflict where ours deleted the file, but theirs modified it."""
+    _set_working_tree_files(temp_repo, {"file_a.txt": "original content\n"})
+    base_hash = temp_repo.commit_working_dir('Author', 'base commit')
+    base_commit = load_commit(temp_repo.objects_dir(), base_hash)
+    base_tree = load_tree(temp_repo.objects_dir(), base_commit.tree_hash)
+    blob_hash = base_tree.records['file_a.txt'].hash
+
+    _set_working_tree_files(temp_repo, {"file_a.txt": "modified content\n"})
+    source_hash = temp_repo.commit_working_dir('Author', 'source modifies file_a')
+
+    source_commit = load_commit(temp_repo.objects_dir(), source_hash)
+    source_tree = load_tree(temp_repo.objects_dir(), source_commit.tree_hash)
+    modified_blob_hash = source_tree.records['file_a.txt'].hash
+
+    temp_repo.update_head(base_hash)
+    _set_working_tree_files(temp_repo, {}) 
+    
+    temp_repo.commit_working_dir('Author', 'target deletes file_a')
+
+    conflicts = [
+        (
+            "file_a.txt",
+            MergeConflict(
+                base_hash=blob_hash, 
+                ours_hash=None, 
+                theirs_hash=modified_blob_hash, 
+                conflict_type="modify/delete",
+                ours_type=None,
+                theirs_type=TreeRecordType.BLOB
+            )
+        )
+    ]
+
+    temp_repo.apply_conflicts_to_disk(conflicts, source_hash)
+
+    assert len(list(temp_repo.working_dir.iterdir())) == 2
+    assert (temp_repo.working_dir / 'file_a.txt').exists()
+    assert (temp_repo.working_dir / 'file_a.txt').read_text() == 'modified content\n'
+    assert temp_repo.merge_head_file().exists()
+
+
+def test_apply_conflicts_type_conflict(temp_repo: Repository) -> None:
+    """Test type conflict where ours has a file and theirs has a directory with the same name."""
+
+    _set_working_tree_files(temp_repo, {"item": "file content\n"})
+    base_hash = temp_repo.commit_working_dir('Author', 'base commit')
+    base_commit = load_commit(temp_repo.objects_dir(), base_hash)
+    blob_hash = load_tree(temp_repo.objects_dir(), base_commit.tree_hash).records['item'].hash
+
+    _set_working_tree_files(temp_repo, {"item": "modified content\n"}) 
+    target_hash = temp_repo.commit_working_dir('Author', 'target modifies item')
+    target_commit = load_commit(temp_repo.objects_dir(), target_hash)
+    target_modified_blob_hash = load_tree(temp_repo.objects_dir(), target_commit.tree_hash).records['item'].hash
+    
+    temp_repo.update_head(base_hash)
+    (temp_repo.working_dir / 'item').unlink()
+    (temp_repo.working_dir / 'item').mkdir()
+    (temp_repo.working_dir / 'item' / 'nested.txt').write_text('nested content\n')
+    
+    source_hash = temp_repo.commit_working_dir('Author', 'source creates directory item')
+    source_commit = load_commit(temp_repo.objects_dir(), source_hash)
+    source_modified_blob_hash = load_tree(temp_repo.objects_dir(), source_commit.tree_hash).records['item'].hash
+
+    
+    shutil.rmtree(temp_repo.working_dir / 'item') # Clean up the source directory
+    _set_working_tree_files(temp_repo, {"item": "modified content\n"}) # Restore our file
+    temp_repo.update_head(target_hash)
+
+    conflicts = [
+        (
+            "item",
+            MergeConflict(
+                base_hash=blob_hash, 
+                ours_hash=target_modified_blob_hash, 
+                theirs_hash=source_modified_blob_hash, 
+                conflict_type="type",
+                ours_type=TreeRecordType.BLOB,
+                theirs_type=TreeRecordType.TREE
+            )
+        )
+    ]
+
+    temp_repo.apply_conflicts_to_disk(conflicts, source_hash)
+
+    assert (temp_repo.working_dir / 'item').exists()
+    assert (temp_repo.working_dir / 'item').is_dir()  
+    assert (temp_repo.working_dir / 'item' / 'nested.txt').exists()
+    assert (temp_repo.working_dir / 'item' / 'nested.txt').read_text() == 'nested content\n'
+    assert (temp_repo.working_dir / 'item~HEAD').exists()
+    assert (temp_repo.working_dir / 'item~HEAD').is_file()
+    assert (temp_repo.working_dir / 'item~HEAD').read_text() == 'modified content\n'
+    assert temp_repo.merge_head_file().exists()
+
+
+def test_apply_conflicts_modify_modify_same_file(temp_repo: Repository) -> None:
+    """Test modify/modify conflict where both sides modified the same file."""
+    _set_working_tree_files(temp_repo, {"file_a.txt": "original content\n"})
+    base_hash = temp_repo.commit_working_dir('Author', 'base commit')
+    base_commit = load_commit(temp_repo.objects_dir(), base_hash)
+    base_tree = load_tree(temp_repo.objects_dir(), base_commit.tree_hash)
+    blob_hash = base_tree.records['file_a.txt'].hash
+
+    _set_working_tree_files(temp_repo, {"file_a.txt": "target content\n"})
+    target_hash = temp_repo.commit_working_dir('Author', 'target modifies file_a')
+
+    target_commit = load_commit(temp_repo.objects_dir(), target_hash)
+    target_tree = load_tree(temp_repo.objects_dir(), target_commit.tree_hash)
+    target_modified_blob_hash = target_tree.records['file_a.txt'].hash
+
+    temp_repo.update_head(target_hash)
+    _set_working_tree_files(temp_repo, {"file_a.txt": "target content\n"})
+
+    _set_working_tree_files(temp_repo, {"file_a.txt": "source content\n"})
+    
+    source_hash = temp_repo.commit_working_dir('Author', 'source modifies file_a')
+
+    source_commit = load_commit(temp_repo.objects_dir(), source_hash)
+    source_tree = load_tree(temp_repo.objects_dir(), source_commit.tree_hash)
+    source_modified_blob_hash = source_tree.records['file_a.txt'].hash
+
+    conflicts = [
+        (
+            "file_a.txt",
+            MergeConflict(
+                base_hash=blob_hash, 
+                ours_hash=target_modified_blob_hash, 
+                theirs_hash=source_modified_blob_hash, 
+                conflict_type="content",
+                ours_type=TreeRecordType.BLOB,
+                theirs_type=TreeRecordType.BLOB
+            )
+        )
+    ]
+
+    temp_repo.apply_conflicts_to_disk(conflicts, source_hash)
+
+    assert (temp_repo.working_dir / 'file_a.txt').exists()
+    merged_file = (temp_repo.working_dir / 'file_a.txt').read_bytes()
+    assert b"<<<<<<< HEAD (ours)\n" in merged_file
+    assert b"target content\n" in merged_file
+    assert b"=======\n" in merged_file
+    assert b"source content\n" in merged_file
+    assert b">>>>>>> MERGE_HEAD (theirs)\n" in merged_file
+
+    assert temp_repo.merge_head_file().exists()
+
+
+def test_apply_conflicts_multiple_conflicts(temp_repo: Repository) -> None:
+    """  """
+    _set_working_tree_files(temp_repo, {"a": "base a\n", "b": "base b\n", "c": "base c\n"})
+    base_hash = temp_repo.commit_working_dir('Author', 'base commit')
+    base_commit = load_commit(temp_repo.objects_dir(), base_hash)
+    base_tree = load_tree(temp_repo.objects_dir(), base_commit.tree_hash)
+    blob_hash_a = base_tree.records['a'].hash
+    blob_hash_b = base_tree.records['b'].hash
+    blob_hash_c = base_tree.records['c'].hash
+
+    _set_working_tree_files(temp_repo, {"a": "target a\n", "b": "target b\n"})
+    (temp_repo.working_dir / 'c').mkdir()
+    (temp_repo.working_dir / 'c' / 'nested.txt').write_text('nested content\n')
+
+    target_hash = temp_repo.commit_working_dir('Author', 'target modifies a and b and changes c to a directory')
+    target_commit = load_commit(temp_repo.objects_dir(), target_hash)
+    target_tree = load_tree(temp_repo.objects_dir(), target_commit.tree_hash)
+    target_blob_hash_a = target_tree.records['a'].hash
+    target_blob_hash_b = target_tree.records['b'].hash
+    target_blob_hash_c = target_tree.records['c'].hash
+
+    temp_repo.update_head(base_hash)
+    shutil.rmtree(temp_repo.working_dir / 'c')
+    _set_working_tree_files(temp_repo, {"b": "source b\n", "c": "source c\n"})
+    if (temp_repo.working_dir / 'a').exists():
+        (temp_repo.working_dir / 'a').unlink()
+    source_hash = temp_repo.commit_working_dir('Author', 'source deletes a and modifies b and c')
+    source_commit = load_commit(temp_repo.objects_dir(), source_hash)
+    source_tree = load_tree(temp_repo.objects_dir(), source_commit.tree_hash)
+    source_blob_hash_b = source_tree.records['b'].hash
+    source_blob_hash_c = source_tree.records['c'].hash
+
+    conflicts = [
+        (
+            "a",
+            MergeConflict(
+                base_hash=blob_hash_a, 
+                ours_hash=target_blob_hash_a, 
+                theirs_hash=None, 
+                conflict_type="modify/delete",
+                ours_type=TreeRecordType.BLOB,
+                theirs_type=None
+            )
+        ),
+        (
+            "b",
+            MergeConflict(
+                base_hash=blob_hash_b, 
+                ours_hash=target_blob_hash_b, 
+                theirs_hash=source_blob_hash_b, 
+                conflict_type="content",
+                ours_type=TreeRecordType.BLOB,
+                theirs_type=TreeRecordType.BLOB
+            )
+        ),
+        (
+            "c",
+            MergeConflict(
+                base_hash=blob_hash_c, 
+                ours_hash=target_blob_hash_c, 
+                theirs_hash=source_blob_hash_c, 
+                conflict_type="type",
+                ours_type=TreeRecordType.TREE,
+                theirs_type=TreeRecordType.BLOB
+            )
+        )
+    ]
+
+    #reset back to target state:
+    _set_working_tree_files(temp_repo, {"a": "target a\n", "b": "target b\n"})
+    (temp_repo.working_dir / 'c').mkdir()
+    (temp_repo.working_dir / 'c' / 'nested.txt').write_text('nested content\n')
+
+    temp_repo.apply_conflicts_to_disk(conflicts, source_hash)
+
+    
+
+
+    assert (temp_repo.working_dir / 'a').exists()
+    assert (temp_repo.working_dir / 'a').is_file()
+    assert (temp_repo.working_dir / 'a').read_text() == 'target a\n'
+
+    assert (temp_repo.working_dir / 'b').exists()
+    merged_b_content = (temp_repo.working_dir / 'b').read_bytes()
+    assert b"<<<<<<< HEAD (ours)\n" in merged_b_content
+    assert b"target b\n" in merged_b_content
+    assert b"=======\n" in merged_b_content
+    assert b"source b\n" in merged_b_content
+    assert b">>>>>>> MERGE_HEAD (theirs)\n" in merged_b_content
+
+    assert (temp_repo.working_dir / 'c').exists()
+    assert (temp_repo.working_dir / 'c').is_dir()
+    assert (temp_repo.working_dir / 'c' / 'nested.txt').exists()
+    assert (temp_repo.working_dir / 'c' / 'nested.txt').read_text() == 'nested content\n'
+    assert (temp_repo.working_dir / 'c~MERGE_HEAD').exists()
+    assert (temp_repo.working_dir / 'c~MERGE_HEAD').is_file()
+    assert (temp_repo.working_dir / 'c~MERGE_HEAD').read_text() == 'source c\n'
+
+    assert temp_repo.merge_head_file().exists()
