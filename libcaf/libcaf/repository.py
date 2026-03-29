@@ -977,6 +977,11 @@ class Repository:
                         ours_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / conflict.ours_hash[:2] / conflict.ours_hash))
                         theirs_seq = file_stack.enter_context(prepare_lines_sequence(objects_dir / conflict.theirs_hash[:2] / conflict.theirs_hash))
                         three_way_merge(base_seq, ours_seq, theirs_seq, abs_path)
+                else: 
+                    # Binary conflict: # our version is already on disk. Extract theirs as a sidecar for comparison.
+                    conflict_dest = self.working_dir / f"{path_str}~MERGE_HEAD"
+                    restore_blob_to_path(objects_dir, conflict.theirs_hash, conflict_dest)
+
             elif conflict.conflict_type == "modify/delete":
                 if not conflict.ours_hash and conflict.theirs_hash:
                     restore_blob_to_path(objects_dir, conflict.theirs_hash, abs_path)
