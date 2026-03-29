@@ -15,7 +15,7 @@ from typing import Concatenate, Optional, Tuple
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
                         OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE)
-from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree, hash_file, open_content_for_reading, restore_blob_to_path
+from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree, hash_file, restore_blob_to_path
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
 from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, compute_merge_tree, is_binary_blob, three_way_merge
 from libcaf.sequences import prepare_lines_sequence
@@ -721,7 +721,7 @@ class Repository:
 
     def _apply_pass3_writes(self, flattened_diffs: Sequence[tuple[Diff, Path]],
                             target_blob_map: dict[Path, HashRef]) -> None:
-        """Apply write pass for additions and modifications using chunked streaming."""
+        """Apply write pass for additions and modifications by restoring blobs and trees from the object database."""
         for diff, rel_path in flattened_diffs:
             abs_path = self.working_dir / rel_path
             if isinstance(diff, AddedDiff):
