@@ -613,15 +613,6 @@ class Repository:
 
             current = current.parent
 
-    def _stream_blob_to_worktree(self, blob_hash: str, destination: Path, chunk_size: int = 64 * 1024) -> None:
-        """Stream a blob from the object store to a destination path using fixed-size chunks."""
-        with open_content_for_reading(self.objects_dir(), blob_hash) as source, destination.open('wb') as dest:
-            while True:
-                chunk = source.read(chunk_size)
-                if not chunk:
-                    break
-                dest.write(chunk)
-
     def _assert_clean_workspace(self, current_blob_map: dict[Path, HashRef],
                                 target_blob_map: dict[Path, HashRef],
                                 added_paths: set[Path]) -> None:
@@ -732,34 +723,24 @@ class Repository:
                             target_blob_map: dict[Path, HashRef]) -> None:
         """Apply write pass for additions and modifications using chunked streaming."""
         for diff, rel_path in flattened_diffs:
+            abs_path = self.working_dir / rel_path
             if isinstance(diff, AddedDiff):
                 if diff.record.type == TreeRecordType.TREE:
-                    os.makedirs(self.working_dir / rel_path, exist_ok=True)
-                    for blob_path in sorted(self._expand_tree_blob_paths(diff.record.hash, rel_path),
-                                            key=lambda p: len(p.parts)):
-                        abs_path = self.working_dir / blob_path
-                        abs_path.parent.mkdir(parents=True, exist_ok=True)
-                        self._stream_blob_to_worktree(target_blob_map[blob_path], abs_path)
+                    extract_tree_to_disk(self.objects_dir(), diff.record.hash, abs_path)
                 else:
                     blob_hash = target_blob_map.get(rel_path)
                     if blob_hash is None:
                         continue
 
-                    abs_path = self.working_dir / rel_path
-                    abs_path.parent.mkdir(parents=True, exist_ok=True)
-
                     if abs_path.exists() and abs_path.is_dir():
                         shutil.rmtree(abs_path)
 
-                    self._stream_blob_to_worktree(blob_hash, abs_path)
+                    restore_blob_to_path(self.objects_dir(), blob_hash, abs_path)
 
             elif isinstance(diff, ModifiedDiff) and diff.record.type == TreeRecordType.BLOB:
                 blob_hash = target_blob_map.get(rel_path)
                 if blob_hash is None:
                     continue
-
-                abs_path = self.working_dir / rel_path
-                abs_path.parent.mkdir(parents=True, exist_ok=True)
 
                 if abs_path.exists():
                     if abs_path.is_dir():
@@ -767,7 +748,7 @@ class Repository:
                     else:
                         abs_path.unlink()
 
-                self._stream_blob_to_worktree(blob_hash, abs_path)
+                restore_blob_to_path(self.objects_dir(), blob_hash, abs_path)
 
     @requires_repo
     def checkout(self, target_ref: Ref) -> None:
