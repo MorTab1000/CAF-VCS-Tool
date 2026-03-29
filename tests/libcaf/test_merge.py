@@ -559,3 +559,51 @@ def test_apply_conflicts_multiple_conflicts(temp_repo: Repository) -> None:
     assert (temp_repo.working_dir / 'c~MERGE_HEAD').read_text() == 'source c\n'
 
     assert temp_repo.merge_head_file().exists()
+
+
+def test_apply_conflicts_binary_content(temp_repo: Repository) -> None:
+    """Test content conflict on binary files (e.g., images). Theirs should be extracted as ~MERGE_HEAD.""" 
+    binary_file = temp_repo.working_dir / 'logo.png'
+    binary_file.write_bytes(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR base')
+    base_hash = temp_repo.commit_working_dir('Author', 'base commit')
+    base_commit = load_commit(temp_repo.objects_dir(), base_hash)
+    blob_hash_base = load_tree(temp_repo.objects_dir(), base_commit.tree_hash).records['logo.png'].hash
+
+    binary_file.write_bytes(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR target')
+    target_hash = temp_repo.commit_working_dir('Author', 'target modifies logo')
+    target_commit = load_commit(temp_repo.objects_dir(), target_hash)
+    blob_hash_target = load_tree(temp_repo.objects_dir(), target_commit.tree_hash).records['logo.png'].hash
+
+    temp_repo.update_head(base_hash)
+    binary_file.write_bytes(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR source')
+    source_hash = temp_repo.commit_working_dir('Author', 'source modifies logo')
+    source_commit = load_commit(temp_repo.objects_dir(), source_hash)
+    blob_hash_source = load_tree(temp_repo.objects_dir(), source_commit.tree_hash).records['logo.png'].hash
+
+    temp_repo.update_head(target_hash)
+    binary_file.write_bytes(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR target')
+
+    conflicts = [
+        (
+            "logo.png",
+            MergeConflict(
+                base_hash=blob_hash_base, 
+                ours_hash=blob_hash_target, 
+                theirs_hash=blob_hash_source, 
+                conflict_type="content",
+                ours_type=TreeRecordType.BLOB,
+                theirs_type=TreeRecordType.BLOB
+            )
+        )
+    ]
+
+    temp_repo.apply_conflicts_to_disk(conflicts, source_hash)
+
+    assert binary_file.exists()
+    assert binary_file.read_bytes() == b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR target'
+    
+    sidecar_file = temp_repo.working_dir / 'logo.png~MERGE_HEAD'
+    assert sidecar_file.exists()
+    assert sidecar_file.read_bytes() == b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR source'
+    
+    assert temp_repo.merge_head_file().exists()
