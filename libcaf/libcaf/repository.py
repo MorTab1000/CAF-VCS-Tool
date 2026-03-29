@@ -988,7 +988,7 @@ class Repository:
                         abs_path.rename(conflict_dest)
                         
                     if conflict.theirs_hash and conflict.theirs_type == TreeRecordType.TREE:
-                        self.extract_tree_to_disk(objects_dir, conflict.theirs_hash, abs_path)
+                        extract_tree_to_disk(objects_dir, conflict.theirs_hash, abs_path)
 
                 if conflict.theirs_hash and conflict.theirs_type == TreeRecordType.BLOB:
                     conflict_dest = self.working_dir / f"{path_str}~MERGE_HEAD"
