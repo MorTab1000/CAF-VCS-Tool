@@ -3,7 +3,7 @@ import shutil
 from libcaf.plumbing import load_commit
 from libcaf.repository import Repository
 from pytest import CaptureFixture
-
+from libcaf.ref import SymRef
 from caf import cli_commands
 
 
@@ -33,18 +33,19 @@ def _setup_text_conflict_state(temp_repo: Repository) -> tuple[str, str]:
     temp_repo.update_ref('heads/feature', base_hash)
 
     # Move HEAD to main and create ours
-    temp_repo.update_head('heads/main')
+    temp_repo.update_head(SymRef('heads/main'))
     _set_working_tree_files(temp_repo, {'conflict.txt': 'ours\n'})
     ours_hash = temp_repo.commit_working_dir('QA', 'main change')
 
     # Move HEAD to feature and create theirs
-    temp_repo.update_head('heads/feature')
+    temp_repo.update_head(SymRef('heads/feature'))
     _set_working_tree_files(temp_repo, {'conflict.txt': 'theirs\n'})
     theirs_hash = temp_repo.commit_working_dir('QA', 'feature change')
 
-    # Checkout main and prepare the merge state directly via repo API
-    temp_repo.checkout('heads/main')
-    report = temp_repo.merge_trees(temp_repo.head_commit(), theirs_hash)
+    temp_repo.checkout(SymRef('heads/main'))
+    
+    report = temp_repo.merge(temp_repo.head_ref(), SymRef('heads/feature'), 'QA') 
+    
     temp_repo.apply_conflicts_to_disk(report.conflicts, theirs_hash)
 
     return ours_hash, theirs_hash
@@ -52,7 +53,7 @@ def _setup_text_conflict_state(temp_repo: Repository) -> tuple[str, str]:
 
 def test_merge_missing_target_argument_aborts_with_error(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
     # Direct function call with missing argument, no monkeypatch needed
-    result = cli_commands.merge(working_dir_path=str(temp_repo.working_dir), target_branch=None, author='QA')
+    result = cli_commands.merge(working_dir_path=str(temp_repo.working_dir), target_ref=None, author='QA')
     
     assert result == -1
     err = capsys.readouterr().err.lower()
@@ -64,7 +65,7 @@ def test_merge_invalid_reference_aborts_gracefully(temp_repo: Repository, capsys
     (temp_repo.working_dir / 'seed.txt').write_text('seed\n')
     temp_repo.commit_working_dir('QA', 'seed commit')
 
-    result = cli_commands.merge(working_dir_path=str(temp_repo.working_dir), target_branch='nonexistent-branch', author='QA')
+    result = cli_commands.merge(working_dir_path=str(temp_repo.working_dir), target_ref='nonexistent-branch', author='QA')
 
     assert result == -1
     err = capsys.readouterr().err.lower()
@@ -79,19 +80,19 @@ def test_merge_clean_merge_outputs_hash_and_updates_workspace(temp_repo: Reposit
     temp_repo.add_branch('feature')
     temp_repo.update_ref('heads/feature', base_hash)
 
-    temp_repo.update_head('heads/main')
+    temp_repo.update_head(SymRef('heads/main'))
     _set_working_tree_files(temp_repo, {'file_a.txt': 'main changed a\n', 'file_b.txt': 'base b\n'})
     temp_repo.commit_working_dir('QA', 'main changes a')
 
-    temp_repo.update_head('heads/feature')
+    temp_repo.update_head(SymRef('heads/feature'))
     _set_working_tree_files(temp_repo, {'file_a.txt': 'base a\n', 'file_b.txt': 'feature changed b\n'})
     temp_repo.commit_working_dir('QA', 'feature changes b')
 
-    temp_repo.checkout('heads/main')
+    temp_repo.checkout(SymRef('heads/main'))
 
     result = cli_commands.merge(
         working_dir_path=str(temp_repo.working_dir), 
-        target_branch='feature', 
+        target_ref='feature', 
         author='QA'
     )
 
@@ -110,17 +111,17 @@ def test_merge_content_conflict_writes_merge_head(temp_repo: Repository, capsys:
     temp_repo.add_branch('feature')
     temp_repo.update_ref('heads/feature', base_hash)
 
-    temp_repo.update_head('heads/main')
+    temp_repo.update_head(SymRef('heads/main'))
     _set_working_tree_files(temp_repo, {'conflict.txt': 'ours\n'})
     temp_repo.commit_working_dir('QA', 'main change')
 
-    temp_repo.update_head('heads/feature')
+    temp_repo.update_head(SymRef('heads/feature'))
     _set_working_tree_files(temp_repo, {'conflict.txt': 'theirs\n'})
     source_hash = temp_repo.commit_working_dir('QA', 'feature change')
 
-    temp_repo.checkout('heads/main')
+    temp_repo.checkout(SymRef('heads/main'))
 
-    result = cli_commands.merge(working_dir_path=str(temp_repo.working_dir), target_branch='feature', author='QA')
+    result = cli_commands.merge(working_dir_path=str(temp_repo.working_dir), target_ref='feature', author='QA')
 
     assert result == -1 
     

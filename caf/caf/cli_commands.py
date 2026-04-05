@@ -5,11 +5,11 @@ from collections.abc import MutableSequence, Sequence
 from datetime import datetime
 from pathlib import Path
 
-from libcaf.constants import DEFAULT_BRANCH
+from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH
 from libcaf.plumbing import hash_file as plumbing_hash_file
-from libcaf.ref import SymRef
+from libcaf.ref import SymRef, HashRef
 from libcaf.repository import (AddedDiff, Diff, ModifiedDiff, MovedToDiff, RemovedDiff, Repository, RepositoryError,
-                               RepositoryNotFoundError)
+                               RepositoryNotFoundError, MergeReport, MergeResult)
 
 
 def _print_error(message: str) -> None:
@@ -339,3 +339,76 @@ def _print_diffs(diff_stack: MutableSequence[tuple[Sequence[Diff], int]]) -> Non
 
             if diff.children:
                 diff_stack.append((diff.children, indent + 3))
+
+
+def merge(**kwargs) -> int:
+    repo = _repo_from_cli_kwargs(kwargs)
+    raw_target = kwargs.get('target_ref')
+    author = kwargs.get('author')
+    
+    if not raw_target:
+        _print_error('Target reference is required for merge.')
+        return -1
+    if not author:
+        _print_error('Author name is required for merge.')
+        return -1
+        
+    try:
+        is_hash = len(raw_target) == HASH_LENGTH and all(c in '0123456789abcdef' for c in raw_target.lower())
+        if is_hash:
+            target_ref = HashRef(raw_target)
+        else:
+            ref_path = raw_target if raw_target.startswith('heads/') else f'heads/{raw_target}'
+            target_ref = SymRef(ref_path)
+        
+        target_hash = repo.resolve_ref(target_ref)
+        if not target_hash:
+            _print_error(f'Could not resolve reference: {target_ref}')
+            return -1
+
+        current_head = repo.head_ref()
+        merge_report = repo.merge(current_head, target_ref, author)
+        
+        match merge_report.status:
+            case MergeResult.FAST_FORWARD:
+                repo.sync_working_dir_to_commit(target_hash)
+                if isinstance(current_head, SymRef):
+                    repo.update_ref(current_head, target_hash)
+                _print_success(f'Merge completed with a fast-forward. Current branch now points to {target_ref}.')
+                return 0            
+                
+            case MergeResult.UP_TO_DATE:
+                _print_success(f'Current branch is already up to date with {target_ref}. No merge needed.')
+                return 0
+                
+            case MergeResult.MERGE_CREATED:
+                repo.sync_working_dir_to_commit(merge_report.commit_hash)
+                if isinstance(current_head, SymRef):
+                    repo.update_ref(current_head, merge_report.commit_hash)
+                _print_success(f'Merge completed with a new merge commit. Current branch now points to {merge_report.commit_hash}.')
+                return 0
+                
+            case MergeResult.CONFLICTS:
+                repo.apply_conflicts_to_disk(merge_report.conflicts, target_hash)
+                
+                _print_success(f'\n⚠️  Merge conflict detected when merging {target_ref}.')
+                _print_success('Automatic merge failed. Unresolved conflicts in:')
+                
+                for path_str, _ in merge_report.conflicts:
+                    _print_success(f'  - {path_str}')
+                    
+                _print_success('\nPlease resolve the text markers, delete any backup files (~HEAD), and run "caf commit".')
+                return -1
+                
+    except RepositoryNotFoundError:
+        _print_error(f'No repository found at {repo.repo_path()}')
+        return -1
+    except RepositoryError as e:    
+        _print_error(f'Repository error: {e}')
+        return -1
+    except NotImplementedError as e:
+        _print_error(f'Merge operation not implemented: {e}')
+        return -1
+    except Exception as e:
+        _print_error(f'Unexpected error during merge: {e}')
+        return -1

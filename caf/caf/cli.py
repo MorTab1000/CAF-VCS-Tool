@@ -188,6 +188,22 @@ def cli() -> None:
             },
             'help': '🏷️ List all tags in the repository',
         },
+        
+        'merge': {
+            'func': cli_commands.merge,
+            'args': {
+                **_repo_args,
+                'target_ref': {
+                    'type': str,
+                    'help': '🔀 The branch, tag, or commit hash to merge into the current branch',
+                },
+                'author': {
+                    'type': str,
+                    'help': '👤 Name of the commit author (required for clean auto-commits)',
+                },
+            },
+            'help': '🔀 Merge a branch or commit into the current active branch',
+        }
     }
 
     # Register commands
