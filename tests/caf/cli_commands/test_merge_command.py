@@ -1,10 +1,8 @@
 import shutil
 
-from libcaf.constants import HASH_LENGTH
 from libcaf.plumbing import load_commit
-from libcaf.ref import read_ref
-from libcaf.repository import MergeResult, Repository, branch_ref
-from pytest import CaptureFixture, MonkeyPatch
+from libcaf.repository import Repository
+from pytest import CaptureFixture
 
 from caf import cli_commands
 
