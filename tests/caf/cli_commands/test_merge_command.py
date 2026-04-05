@@ -151,7 +151,7 @@ def test_commit_blocked_when_unresolved_conflict_markers_exist(temp_repo: Reposi
     assert temp_repo.head_commit() == old_head
 
 
-def test_commit_after_resolving_conflicts_creates_two_parent_commit(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_commit_after_resolving_conflicts_creates_two_parent_commit(temp_repo: Repository) -> None:
     old_head, theirs_hash = _setup_text_conflict_state(temp_repo)
     merge_head_file = temp_repo.merge_head_file()
     assert merge_head_file.exists()
