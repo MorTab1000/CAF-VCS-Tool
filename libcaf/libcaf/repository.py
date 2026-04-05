@@ -749,6 +749,34 @@ class Repository:
                         abs_path.unlink()
 
                 restore_blob_to_path(self.objects_dir(), blob_hash, abs_path)
+    
+    @requires_repo
+    def sync_working_dir_to_commit(self, target_hash: str) -> None:
+        """Safely updates the physical files on disk to match a target commit."""
+        current_hash = self.head_commit()
+        if current_hash == target_hash:
+            return
+
+        current_blob_map = self._collect_blob_map(current_hash)
+        target_blob_map = self._collect_blob_map(target_hash)
+
+        diffs = self.diff_commits(current_hash, target_hash)
+        flattened_diffs = flatten_diffs_with_paths(diffs)
+        move_pairs = pair_moves(flattened_diffs)
+        
+        added_paths: set[Path] = {dst for _, dst in move_pairs}
+        for diff, rel_path in flattened_diffs:
+            if not isinstance(diff, AddedDiff):
+                continue
+            if diff.record.type == TreeRecordType.BLOB:
+                added_paths.add(rel_path)
+            elif diff.record.type == TreeRecordType.TREE:
+                added_paths.update(self._expand_tree_blob_paths(diff.record.hash, rel_path))
+
+        self._assert_clean_workspace(current_blob_map, target_blob_map, added_paths)
+        self._apply_pass1_deletions(flattened_diffs)
+        self._apply_pass2_renames(move_pairs)
+        self._apply_pass3_writes(flattened_diffs, target_blob_map)
 
     @requires_repo
     def checkout(self, target_ref: Ref) -> None:
@@ -764,32 +792,7 @@ class Repository:
                 # Assuming if it's not a hash, it's meant to be a symbolic branch reference
                 safe_ref = SymRef(target_ref)
 
-        current_hash = self.head_commit()
-        if current_hash == target_hash:
-            return
-
-        current_blob_map = self._collect_blob_map(current_hash)
-        target_blob_map = self._collect_blob_map(target_hash)
-
-        diffs = self.diff_commits(current_hash, target_hash)
-        flattened_diffs = flatten_diffs_with_paths(diffs)
-        move_pairs = pair_moves(flattened_diffs)
-        added_paths: set[Path] = {dst for _, dst in move_pairs}
-        
-        for diff, rel_path in flattened_diffs:
-            if not isinstance(diff, AddedDiff):
-                continue
-            if diff.record.type == TreeRecordType.BLOB:
-                added_paths.add(rel_path)
-            elif diff.record.type == TreeRecordType.TREE:
-                added_paths.update(self._expand_tree_blob_paths(diff.record.hash, rel_path))
-
-        self._assert_clean_workspace(current_blob_map, target_blob_map, added_paths)
-
-        self._apply_pass1_deletions(flattened_diffs)
-        self._apply_pass2_renames(move_pairs)
-        self._apply_pass3_writes(flattened_diffs, target_blob_map)
-
+        self.sync_working_dir_to_commit(target_hash)
         self.update_head(safe_ref)
     
     @requires_repo
