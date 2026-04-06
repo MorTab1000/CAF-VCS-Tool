@@ -91,8 +91,8 @@ def test_merge_clean_merge_outputs_hash_and_updates_workspace(temp_repo: Reposit
     temp_repo.checkout(SymRef('heads/main'))
 
     result = cli_commands.merge(
-        working_dir_path=str(temp_repo.working_dir), 
-        target_ref='feature', 
+        working_dir_path=str(temp_repo.working_dir),
+        target_ref='feature',
         author='QA'
     )
 
