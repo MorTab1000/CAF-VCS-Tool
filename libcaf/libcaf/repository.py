@@ -966,7 +966,8 @@ class Repository:
             return MergeReport(MergeResult.FAST_FORWARD, source_hash)
         
         # Perform a three-way merge using the LCA commit as the common ancestor
-
+        if not author:
+            raise RepositoryError("Author name is required to auto-create a merge commit.")
 
         lca_commit = load_commit(self.objects_dir(), lca)
         merge_plan = merge_trees(lca_commit.tree_hash, target_commit.tree_hash, source_commit.tree_hash,

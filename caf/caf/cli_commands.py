@@ -344,13 +344,10 @@ def _print_diffs(diff_stack: MutableSequence[tuple[Sequence[Diff], int]]) -> Non
 def merge(**kwargs) -> int:
     repo = _repo_from_cli_kwargs(kwargs)
     raw_target = kwargs.get('target_ref')
-    author = kwargs.get('author')
+    author = kwargs.get('author') or ""
     
     if not raw_target:
         _print_error('Target reference is required for merge.')
-        return -1
-    if not author:
-        _print_error('Author name is required for merge.')
         return -1
         
     try:
