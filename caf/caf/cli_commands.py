@@ -388,7 +388,6 @@ def merge(**kwargs) -> int:
             _print_error(f'Could not resolve branch, tag, or commit reference: {raw_target}')
             return -1
 
-        # --- 2. CALL THE ENGINE ---
         current_head = repo.head_ref()
         merge_report = repo.merge(current_head, target_ref, author)
         
@@ -397,6 +396,9 @@ def merge(**kwargs) -> int:
                 repo.sync_working_dir_to_commit(target_hash)
                 if isinstance(current_head, SymRef):
                     repo.update_ref(current_head, target_hash)
+                else:
+                    # Detached HEAD fix: advance the HEAD pointer directly
+                    repo.update_head(HashRef(target_hash))
                 _print_success(f'Merge completed with a fast-forward. Current branch now points to {target_ref}.')
                 return 0            
                 
@@ -408,6 +410,9 @@ def merge(**kwargs) -> int:
                 repo.sync_working_dir_to_commit(merge_report.commit_hash)
                 if isinstance(current_head, SymRef):
                     repo.update_ref(current_head, merge_report.commit_hash)
+                else:
+                    # Detached HEAD fix: advance the HEAD pointer directly
+                    repo.update_head(HashRef(merge_report.commit_hash))
                 _print_success(f'Merge completed with a new merge commit. Current branch now points to {merge_report.commit_hash}.')
                 return 0
                 
