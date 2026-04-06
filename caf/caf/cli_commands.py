@@ -437,6 +437,6 @@ def merge(**kwargs) -> int:
     except NotImplementedError as e:
         _print_error(f'Merge operation not implemented: {e}')
         return -1
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         _print_error(f'Unexpected error during merge: {e}')
         return -1
