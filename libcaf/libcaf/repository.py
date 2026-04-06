@@ -416,16 +416,22 @@ class Repository:
 
                 # Check for content conflict markers
                 try:
-                    # Reading as bytes handles mixed encodings safely
-                    if b'<<<<<<< HEAD' in file_path.read_bytes():
-                        rel_path = file_path.relative_to(self.working_dir)
-                        raise RepositoryError(f'Cannot commit: Unresolved conflict markers found in {rel_path}')
-                except (OSError, MemoryError):
-                    continue  
+                    # Stream the file line-by-line in binary to completely avoid MemoryError
+                    with file_path.open('rb') as f:
+                        for line in f:
+                            if b'<<<<<<< HEAD' in line:
+                                rel_path = file_path.relative_to(self.working_dir)
+                                raise RepositoryError(f'Cannot commit: Unresolved conflict markers found in {rel_path}')
+                except RepositoryError:
+                    # Re-raise our own conflict error so it stops the commit
+                    raise
+                except OSError as e:
+                    # If the OS locks the file, we cannot guarantee a clean merge.
+                    rel_path = file_path.relative_to(self.working_dir)
+                    raise RepositoryError(f'Cannot commit: Unable to verify conflict status of {rel_path} ({e})')
 
             merge_head_hash = str(read_ref(merge_head_file))
             parents.append(merge_head_hash)
-        # ---------------------------------------------
 
         # Save the current working directory as a tree
         tree_hash = self.save_dir(self.working_dir)
