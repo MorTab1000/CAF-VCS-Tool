@@ -40,7 +40,11 @@ class MergeResult(Enum):
 class MergeReport:
     status: MergeResult
     commit_hash: Optional[HashRef] = None
-    auto_merged: dict[str, str] = field(default_factory=dict)
+    # 'clean_updates' holds paths mapping to blob hashes. 
+    # This includes 3-way auto-merges, brand new files, AND files updated cleanly by the source branch.
+    clean_updates: dict[str, TreeRecord] = field(default_factory=dict)
+    # Files that the source branch safely deleted
+    deletions: list[str] = field(default_factory=list)
     conflicts: list[tuple[str, MergeConflict]] = field(default_factory=list)
 
 @dataclass
@@ -384,7 +388,7 @@ class Repository:
         :param message: The commit message.
         :return: A HashRef object representing the commit reference.
         :raises ValueError: If the author or message is empty.
-        :raises RepositoryError: If the commit process fails.
+        :raises RepositoryError: If the commit process fails or conflicts are unresolved.
         :raises RepositoryNotFoundError: If the repository does not exist."""
         if not author:
             msg = 'Author is required'
@@ -393,18 +397,51 @@ class Repository:
             msg = 'Commit message is required'
             raise ValueError(msg)
 
-        # See if HEAD is a symbolic reference to a branch that we need to update
-        # if the commit process is successful.
-        # Otherwise, there is nothing to update and HEAD will continue to point
-        # to the detached commit.
-        # Either way the commit HEAD eventually resolves to becomes the parent of the new commit.
         head_ref = self.head_ref()
         branch = head_ref if isinstance(head_ref, SymRef) else None
         parent_commit_ref = self.head_commit()
 
+        parents = [parent_commit_ref] if parent_commit_ref else []
+
+        merge_head_file = self.merge_head_file()
+        if merge_head_file.exists():
+            for file_path in self.working_dir.rglob('*'):
+                # Ignore the internal .caf directory
+                if self.repo_dir.name in file_path.parts:
+                    continue
+                if not file_path.is_file():
+                    continue
+
+                # Check for structural conflict backups left behind
+                if file_path.name.endswith('~HEAD') or file_path.name.endswith('~MERGE_HEAD'):
+                    raise RepositoryError(
+                        f'Cannot commit: Unresolved structural conflict backup file found ({file_path.name})'
+                    )
+
+                # Check for content conflict markers
+                try:
+                    # Stream the file line-by-line in binary to completely avoid MemoryError
+                    with file_path.open('rb') as f:
+                        for line in f:
+                            if b'<<<<<<< HEAD' in line:
+                                rel_path = file_path.relative_to(self.working_dir)
+                                raise RepositoryError(f'Cannot commit: Unresolved conflict markers found in {rel_path}')
+                except RepositoryError:
+                    # Re-raise our own conflict error so it stops the commit
+                    raise
+                except OSError as e:
+                    # If the OS locks the file, we cannot guarantee a clean merge.
+                    rel_path = file_path.relative_to(self.working_dir)
+                    raise RepositoryError(f'Cannot commit: Unable to verify conflict status of {rel_path} ({e})')
+
+            merge_head_hash = read_ref(merge_head_file)
+            if not isinstance(merge_head_hash, HashRef):
+                raise RepositoryError('Cannot commit: Corrupt MERGE_HEAD file. Expected a valid commit hash.')
+            parents.append(merge_head_hash)
+
         # Save the current working directory as a tree
         tree_hash = self.save_dir(self.working_dir)
-        parents = [parent_commit_ref] if parent_commit_ref else []
+        
         commit = Commit(tree_hash, author, message, int(datetime.now().timestamp()), parents)
         commit_ref = HashRef(hash_object(commit))
 
@@ -412,6 +449,10 @@ class Repository:
 
         if branch:
             self.update_ref(branch, commit_ref)
+
+        # clean up merge state
+        if merge_head_file.exists():
+            merge_head_file.unlink()
 
         return commit_ref
 
@@ -749,6 +790,34 @@ class Repository:
                         abs_path.unlink()
 
                 restore_blob_to_path(self.objects_dir(), blob_hash, abs_path)
+    
+    @requires_repo
+    def sync_working_dir_to_commit(self, target_hash: str) -> None:
+        """Safely updates the physical files on disk to match a target commit."""
+        current_hash = self.head_commit()
+        if current_hash == target_hash:
+            return
+
+        current_blob_map = self._collect_blob_map(current_hash)
+        target_blob_map = self._collect_blob_map(target_hash)
+
+        diffs = self.diff_commits(current_hash, target_hash)
+        flattened_diffs = flatten_diffs_with_paths(diffs)
+        move_pairs = pair_moves(flattened_diffs)
+        
+        added_paths: set[Path] = {dst for _, dst in move_pairs}
+        for diff, rel_path in flattened_diffs:
+            if not isinstance(diff, AddedDiff):
+                continue
+            if diff.record.type == TreeRecordType.BLOB:
+                added_paths.add(rel_path)
+            elif diff.record.type == TreeRecordType.TREE:
+                added_paths.update(self._expand_tree_blob_paths(diff.record.hash, rel_path))
+
+        self._assert_clean_workspace(current_blob_map, target_blob_map, added_paths)
+        self._apply_pass1_deletions(flattened_diffs)
+        self._apply_pass2_renames(move_pairs)
+        self._apply_pass3_writes(flattened_diffs, target_blob_map)
 
     @requires_repo
     def checkout(self, target_ref: Ref) -> None:
@@ -764,32 +833,7 @@ class Repository:
                 # Assuming if it's not a hash, it's meant to be a symbolic branch reference
                 safe_ref = SymRef(target_ref)
 
-        current_hash = self.head_commit()
-        if current_hash == target_hash:
-            return
-
-        current_blob_map = self._collect_blob_map(current_hash)
-        target_blob_map = self._collect_blob_map(target_hash)
-
-        diffs = self.diff_commits(current_hash, target_hash)
-        flattened_diffs = flatten_diffs_with_paths(diffs)
-        move_pairs = pair_moves(flattened_diffs)
-        added_paths: set[Path] = {dst for _, dst in move_pairs}
-        
-        for diff, rel_path in flattened_diffs:
-            if not isinstance(diff, AddedDiff):
-                continue
-            if diff.record.type == TreeRecordType.BLOB:
-                added_paths.add(rel_path)
-            elif diff.record.type == TreeRecordType.TREE:
-                added_paths.update(self._expand_tree_blob_paths(diff.record.hash, rel_path))
-
-        self._assert_clean_workspace(current_blob_map, target_blob_map, added_paths)
-
-        self._apply_pass1_deletions(flattened_diffs)
-        self._apply_pass2_renames(move_pairs)
-        self._apply_pass3_writes(flattened_diffs, target_blob_map)
-
+        self.sync_working_dir_to_commit(target_hash)
         self.update_head(safe_ref)
     
     @requires_repo
@@ -922,19 +966,20 @@ class Repository:
             return MergeReport(MergeResult.FAST_FORWARD, source_hash)
         
         # Perform a three-way merge using the LCA commit as the common ancestor
-
+        if not author:
+            raise RepositoryError("Author name is required to auto-create a merge commit.")
 
         lca_commit = load_commit(self.objects_dir(), lca)
         merge_plan = merge_trees(lca_commit.tree_hash, target_commit.tree_hash, source_commit.tree_hash,
                                  lambda h: load_tree(self.objects_dir(), h))
-        root_hash, conflicts, auto_merged = compute_merge_tree(self.objects_dir(), merge_plan)
+        root_hash, conflicts, clean_updates, deletions = compute_merge_tree(self.objects_dir(), merge_plan)
         if conflicts:
-            return MergeReport(MergeResult.CONFLICTS, target_hash, auto_merged, conflicts)
+            return MergeReport(MergeResult.CONFLICTS, target_hash, clean_updates, deletions, conflicts)
         
         new_commit = Commit(root_hash, author, f'Merge {source_ref} into {target_ref}', int(datetime.now().timestamp()), [target_hash, source_hash])
         save_commit(self.objects_dir(), new_commit)
         new_commit_hash = hash_object(new_commit)
-        return MergeReport(MergeResult.MERGE_CREATED, new_commit_hash, auto_merged, conflicts)
+        return MergeReport(MergeResult.MERGE_CREATED, new_commit_hash, clean_updates, deletions, conflicts)
 
     @requires_repo
     def apply_conflicts_to_disk(self, conflicts: list[Tuple[str, MergeConflict]], source_hash: str) -> None:
@@ -983,6 +1028,31 @@ class Repository:
                     restore_blob_to_path(objects_dir, conflict.theirs_hash, conflict_dest)
                 
         write_ref(self.merge_head_file(), HashRef(source_hash))
+    
+    @requires_repo
+    def apply_clean_updates_to_disk(self, merge_report: 'MergeReport') -> None:
+        """Apply all non-conflicting additions, updates, and deletions to the workspace."""
+        
+        # Apply all cleanly added, updated, or auto-merged files and directories
+        for path_str, record in merge_report.clean_updates.items():
+            abs_path = self.working_dir / path_str
+            
+            if record.type == TreeRecordType.TREE:
+                extract_tree_to_disk(self.objects_dir(), record.hash, abs_path)
+            else:
+                abs_path.parent.mkdir(parents=True, exist_ok=True)
+                restore_blob_to_path(str(self.objects_dir()), record.hash, str(abs_path))
+                
+        # Physically remove files that were cleanly deleted by the merge
+        for path_str in merge_report.deletions:
+            file_path = self.working_dir / path_str
+            if file_path.exists():
+                file_path.unlink()
+                
+            try:
+                file_path.parent.rmdir()
+            except OSError:
+                pass # Directory not empty, ignore
 
 def branch_ref(branch: str) -> SymRef:
     """Create a symbolic reference for a branch name.

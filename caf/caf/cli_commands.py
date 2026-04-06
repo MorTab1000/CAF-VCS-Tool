@@ -5,11 +5,11 @@ from collections.abc import MutableSequence, Sequence
 from datetime import datetime
 from pathlib import Path
 
-from libcaf.constants import DEFAULT_BRANCH
+from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH
 from libcaf.plumbing import hash_file as plumbing_hash_file
-from libcaf.ref import SymRef
+from libcaf.ref import SymRef, HashRef, RefError
 from libcaf.repository import (AddedDiff, Diff, ModifiedDiff, MovedToDiff, RemovedDiff, Repository, RepositoryError,
-                               RepositoryNotFoundError)
+                               RepositoryNotFoundError, MergeResult)
 
 
 def _print_error(message: str) -> None:
@@ -339,3 +339,102 @@ def _print_diffs(diff_stack: MutableSequence[tuple[Sequence[Diff], int]]) -> Non
 
             if diff.children:
                 diff_stack.append((diff.children, indent + 3))
+
+
+def merge(**kwargs) -> int:
+    repo = _repo_from_cli_kwargs(kwargs)
+    raw_target = kwargs.get('target_ref')
+    author = kwargs.get('author') or ""
+    
+    if not raw_target:
+        _print_error('Target reference is required for merge.')
+        return -1
+        
+    try:
+        is_hash = len(raw_target) == HASH_LENGTH and all(c in '0123456789abcdef' for c in raw_target.lower())
+        
+        target_ref = None
+        target_hash = None
+
+        if is_hash:
+            target_ref = HashRef(raw_target)
+            try:
+                target_hash = repo.resolve_ref(target_ref)
+            except (RefError, OSError): 
+                pass # Handled below if it fails
+        else:
+            if raw_target.startswith('heads/') or raw_target.startswith('tags/'):
+                candidates = [raw_target]
+            else:
+                # Ambiguous input! Try branch first, then fallback to tag
+                candidates = [f'heads/{raw_target}', f'tags/{raw_target}']
+            
+            for candidate in candidates:
+                try:
+                    temp_ref = SymRef(candidate)
+                    possible_hash = repo.resolve_ref(temp_ref)
+                    if possible_hash:
+                        target_ref = temp_ref
+                        target_hash = possible_hash
+                        break 
+                except (RefError, OSError):
+                    # Ignore the FileNotFoundError and try the next candidate in the list
+                    continue
+
+        if not target_hash or not target_ref:
+            _print_error(f'Could not resolve branch, tag, or commit reference: {raw_target}')
+            return -1
+
+        current_head = repo.head_ref()
+        merge_report = repo.merge(current_head, target_ref, author)
+        
+        match merge_report.status:
+            case MergeResult.FAST_FORWARD:
+                repo.sync_working_dir_to_commit(target_hash)
+                if isinstance(current_head, SymRef):
+                    repo.update_ref(current_head, target_hash)
+                else:
+                    # Detached HEAD fix: advance the HEAD pointer directly
+                    repo.update_head(HashRef(target_hash))
+                _print_success(f'Merge completed with a fast-forward. Current branch now points to {target_ref}.')
+                return 0            
+                
+            case MergeResult.UP_TO_DATE:
+                _print_success(f'Current branch is already up to date with {target_ref}. No merge needed.')
+                return 0
+                
+            case MergeResult.MERGE_CREATED:
+                repo.sync_working_dir_to_commit(merge_report.commit_hash)
+                if isinstance(current_head, SymRef):
+                    repo.update_ref(current_head, merge_report.commit_hash)
+                else:
+                    # Detached HEAD fix: advance the HEAD pointer directly
+                    repo.update_head(HashRef(merge_report.commit_hash))
+                _print_success(f'Merge completed with a new merge commit. Current branch now points to {merge_report.commit_hash}.')
+                return 0
+                
+            case MergeResult.CONFLICTS:
+                repo.apply_clean_updates_to_disk(merge_report)
+                repo.apply_conflicts_to_disk(merge_report.conflicts, target_hash)
+                
+                _print_success(f'\n⚠️  Merge conflict detected when merging {target_ref}.')
+                _print_success('Automatic merge failed. Unresolved conflicts in:')
+                
+                for path_str, _ in merge_report.conflicts:
+                    _print_success(f'  - {path_str}')
+                    
+                _print_success('\nPlease resolve the text markers, delete any backup files (~HEAD), and run "caf commit".')
+                return -1
+                
+    except RepositoryNotFoundError:
+        _print_error(f'No repository found at {repo.repo_path()}')
+        return -1
+    except RepositoryError as e:    
+        _print_error(f'Repository error: {e}')
+        return -1
+    except NotImplementedError as e:
+        _print_error(f'Merge operation not implemented: {e}')
+        return -1
+    except Exception as e:  # noqa: BLE001
+        _print_error(f'Unexpected error during merge: {e}')
+        return -1
