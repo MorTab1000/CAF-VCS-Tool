@@ -1,7 +1,7 @@
 import pytest
 import shutil
 from datetime import datetime
-from libcaf.repository import Repository, MergeResult, RepositoryError, branch_ref
+from libcaf.repository import Repository, MergeResult, RepositoryError, branch_ref, MergeReport
 from libcaf.merge_algo import find_lca, MergeConflict, TreeRecordType
 from libcaf import Commit
 from libcaf.plumbing import save_commit, hash_object, load_commit, open_content_for_reading, load_tree
@@ -607,3 +607,74 @@ def test_apply_conflicts_binary_content(temp_repo: Repository) -> None:
     assert sidecar_file.read_bytes() == b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR source'
     
     assert temp_repo.merge_head_file().exists()
+
+
+def test_apply_clean_updates_adds_and_overwrites_files(temp_repo: Repository) -> None:
+    """Test that clean updates correctly create new files and overwrite existing ones."""
+    _set_working_tree_files(temp_repo, {"new_file.txt": "new content\n", "updated.txt": "updated content\n"})
+    commit_hash = temp_repo.commit_working_dir('Author', 'setup blobs')
+    
+    # Extract the actual hashes from the database
+    commit = load_commit(temp_repo.objects_dir(), commit_hash)
+    tree = load_tree(temp_repo.objects_dir(), commit.tree_hash)
+    hash_new = tree.records['new_file.txt'].hash
+    hash_updated = tree.records['updated.txt'].hash
+
+    # Reset workspace to simulate the state right before a merge
+    _set_working_tree_files(temp_repo, {"updated.txt": "old content\n"})
+    if (temp_repo.working_dir / "new_file.txt").exists():
+        (temp_repo.working_dir / "new_file.txt").unlink()
+
+    # Create our mock report
+    report = MergeReport(
+        status=MergeResult.CONFLICTS,
+        clean_updates={
+            "new_file.txt": hash_new, 
+            "updated.txt": hash_updated
+        },
+        deletions=[],
+        conflicts=[]
+    )
+
+    temp_repo.apply_clean_updates_to_disk(report)
+
+    assert (temp_repo.working_dir / "new_file.txt").exists()
+    assert (temp_repo.working_dir / "new_file.txt").read_text() == "new content\n"
+    assert (temp_repo.working_dir / "updated.txt").exists()
+    assert (temp_repo.working_dir / "updated.txt").read_text() == "updated content\n"
+
+
+def test_apply_clean_updates_deletes_files_and_empty_dirs(temp_repo: Repository) -> None:
+    """Test that deletions remove files and safely prune empty parent directories."""
+    _set_working_tree_files(temp_repo, {
+        "root_file.txt": "bye\n",
+        "dir_to_delete/file.txt": "bye\n",
+        "dir_to_keep/file.txt": "stay\n",
+        "dir_to_keep/delete_me.txt": "bye\n"
+    })
+
+    # Create our mock report telling it what to delete
+    report = MergeReport(
+        status=MergeResult.CONFLICTS,
+        clean_updates={},
+        deletions=[
+            "root_file.txt", 
+            "dir_to_delete/file.txt", 
+            "dir_to_keep/delete_me.txt"
+        ],
+        conflicts=[]
+    )
+
+    temp_repo.apply_clean_updates_to_disk(report)
+
+    # The root file should be gone
+    assert not (temp_repo.working_dir / "root_file.txt").exists()
+
+    # The file in the deleted dir should be gone, AND the empty dir should be pruned
+    assert not (temp_repo.working_dir / "dir_to_delete" / "file.txt").exists()
+    assert not (temp_repo.working_dir / "dir_to_delete").exists() 
+
+    # The kept dir should still exist because 'file.txt' is still inside it!
+    assert not (temp_repo.working_dir / "dir_to_keep" / "delete_me.txt").exists()
+    assert (temp_repo.working_dir / "dir_to_keep" / "file.txt").exists()
+    assert (temp_repo.working_dir / "dir_to_keep").exists()
