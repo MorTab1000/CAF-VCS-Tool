@@ -430,7 +430,7 @@ class Repository:
                     rel_path = file_path.relative_to(self.working_dir)
                     raise RepositoryError(f'Cannot commit: Unable to verify conflict status of {rel_path} ({e})')
 
-            merge_head_hash = str(read_ref(merge_head_file))
+            merge_head_hash = read_ref(merge_head_file)
             parents.append(merge_head_hash)
 
         # Save the current working directory as a tree
