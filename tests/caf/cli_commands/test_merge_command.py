@@ -3,7 +3,7 @@ import shutil
 from libcaf.plumbing import load_commit
 from libcaf.repository import Repository
 from pytest import CaptureFixture
-from libcaf.ref import SymRef
+from libcaf.ref import SymRef, HashRef
 from caf import cli_commands
 
 
@@ -227,3 +227,42 @@ def test_merge_with_tag_succeeds(temp_repo: Repository, capsys: CaptureFixture[s
 
     assert result == 0
     assert 'fast-forward' in capsys.readouterr().out.lower()
+
+
+def test_merge_in_detached_head_fast_forwards_correctly(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    _set_working_tree_files(temp_repo, {'file_a.txt': 'base\n'})
+    base_hash = temp_repo.commit_working_dir('QA', 'base')
+
+    # Setup feature branch with a new commit
+    temp_repo.add_branch('feature')
+    temp_repo.update_ref('heads/feature', base_hash)
+    temp_repo.update_head(SymRef('heads/feature'))
+    _set_working_tree_files(temp_repo, {'file_a.txt': 'feature change\n'})
+    feature_hash = temp_repo.commit_working_dir('QA', 'feature change')
+
+    # Force a Detached HEAD state by checking out the raw base commit hash
+    temp_repo.checkout(HashRef(base_hash))
+    
+    # Verify we are actually detached before we start
+    assert isinstance(temp_repo.head_ref(), HashRef)
+
+    # Merge the feature branch into our detached HEAD
+    result = cli_commands.merge(
+        working_dir_path=str(temp_repo.working_dir),
+        target_ref='feature',
+        author='QA'
+    )
+
+    assert result == 0
+
+    # CLI output confirms fast-forward
+    output = capsys.readouterr().out.lower()
+    assert 'fast-forward' in output
+
+    # HEAD is STILL detached (HashRef), but has stepped forward to the new commit
+    current_head = temp_repo.head_ref()
+    assert isinstance(current_head, HashRef)
+    assert str(current_head) == str(feature_hash)
+    
+    # Physical files updated correctly
+    assert (temp_repo.working_dir / 'file_a.txt').read_text() == 'feature change\n'
