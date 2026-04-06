@@ -435,6 +435,8 @@ class Repository:
                     raise RepositoryError(f'Cannot commit: Unable to verify conflict status of {rel_path} ({e})')
 
             merge_head_hash = read_ref(merge_head_file)
+            if not isinstance(merge_head_hash, HashRef):
+                raise RepositoryError('Cannot commit: Corrupt MERGE_HEAD file. Expected a valid commit hash.')
             parents.append(merge_head_hash)
 
         # Save the current working directory as a tree
