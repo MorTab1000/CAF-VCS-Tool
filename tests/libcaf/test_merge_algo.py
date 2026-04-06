@@ -289,8 +289,10 @@ def test_compute_merge_complex_structure(temp_repo: Repository) -> None:
    
     # file1.txt should be in clean_updated
     assert "file1.txt" in clean_updated
+
+    f1_hash = clean_updated["file1.txt"].hash 
+    f1_content = (objects_dir / f1_hash[:2] / f1_hash).read_bytes()
    
-    f1_content = (objects_dir / clean_updated["file1.txt"][:2] / clean_updated["file1.txt"]).read_bytes()
     assert b"line1 modified\n" in f1_content
     assert b"line2\n" in f1_content
     assert b"line3 modified\n" in f1_content

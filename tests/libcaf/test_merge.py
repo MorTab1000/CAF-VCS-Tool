@@ -2,8 +2,8 @@ import pytest
 import shutil
 from datetime import datetime
 from libcaf.repository import Repository, MergeResult, RepositoryError, branch_ref, MergeReport
-from libcaf.merge_algo import find_lca, MergeConflict, TreeRecordType
-from libcaf import Commit
+from libcaf.merge_algo import find_lca, MergeConflict
+from libcaf import Commit, TreeRecord, TreeRecordType
 from libcaf.plumbing import save_commit, hash_object, load_commit, open_content_for_reading, load_tree
 
 
@@ -252,7 +252,7 @@ def test_merge_3way_auto_merge_same_file(temp_repo: Repository) -> None:
     assert 'text.txt' in root_tree.records
     assert 'text.txt' in report.clean_updates
 
-    merged_blob_hash = report.clean_updates['text.txt']
+    merged_blob_hash = report.clean_updates['text.txt'].hash
     with open_content_for_reading(temp_repo.objects_dir(), merged_blob_hash) as merged_blob:
         merged_text = merged_blob.read().decode('utf-8')
 
@@ -629,9 +629,9 @@ def test_apply_clean_updates_adds_and_overwrites_files(temp_repo: Repository) ->
     report = MergeReport(
         status=MergeResult.CONFLICTS,
         clean_updates={
-            "new_file.txt": hash_new, 
-            "updated.txt": hash_updated
-        },
+                "new_file.txt": TreeRecord(TreeRecordType.BLOB, hash_new, "new_file.txt"),
+                "updated.txt": TreeRecord(TreeRecordType.BLOB, hash_updated, "updated.txt")
+            },
         deletions=[],
         conflicts=[]
     )

@@ -161,7 +161,7 @@ def compute_merge_tree(objects_dir: Path, merge_result: MergePlan, current_path:
                     records[name] = value
                 elif isinstance(value, CleanUpdate):
                     records[name] = value.record
-                    clean_updates[full_path] = value.record.hash
+                    clean_updates[full_path] = value.record
                 elif isinstance(value, CleanDelete):
                     deletions.append(full_path)
                 elif isinstance(value, dict):
@@ -187,7 +187,7 @@ def compute_merge_tree(objects_dir: Path, merge_result: MergePlan, current_path:
                                     if is_clean:                                                                  
                                         merged_hash =  hash_and_save_blob(objects_dir, temp_file_path)
                                         records[name] = TreeRecord(TreeRecordType.BLOB, merged_hash, name)
-                                        clean_updates[full_path] = merged_hash                                        
+                                        clean_updates[full_path] = records[name]                                     
                                     else:
                                         conflicts.append((full_path, value))
                                         has_conflict_in_dir = True

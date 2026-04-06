@@ -42,7 +42,7 @@ class MergeReport:
     commit_hash: Optional[HashRef] = None
     # 'clean_updates' holds paths mapping to blob hashes. 
     # This includes 3-way auto-merges, brand new files, AND files updated cleanly by the source branch.
-    clean_updates: dict[str, str] = field(default_factory=dict) 
+    clean_updates: dict[str, TreeRecord] = field(default_factory=dict)
     # Files that the source branch safely deleted
     deletions: list[str] = field(default_factory=list)
     conflicts: list[tuple[str, MergeConflict]] = field(default_factory=list)
@@ -1033,12 +1033,16 @@ class Repository:
     def apply_clean_updates_to_disk(self, merge_report: 'MergeReport') -> None:
         """Apply all non-conflicting additions, updates, and deletions to the workspace."""
         
-        # Apply all cleanly added, updated, or auto-merged files
-        for path_str, blob_hash in merge_report.clean_updates.items():
-            file_path = self.working_dir / path_str
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            restore_blob_to_path(self.objects_dir(), blob_hash, file_path)
+        # Apply all cleanly added, updated, or auto-merged files and directories
+        for path_str, record in merge_report.clean_updates.items():
+            abs_path = self.working_dir / path_str
             
+            if record.type == TreeRecordType.TREE:
+                extract_tree_to_disk(self.objects_dir(), record.hash, abs_path)
+            else:
+                abs_path.parent.mkdir(parents=True, exist_ok=True)
+                restore_blob_to_path(str(self.objects_dir()), record.hash, str(abs_path))
+                
         # Physically remove files that were cleanly deleted by the merge
         for path_str in merge_report.deletions:
             file_path = self.working_dir / path_str
