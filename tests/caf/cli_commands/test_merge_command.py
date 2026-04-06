@@ -1,5 +1,6 @@
 import shutil
 
+import pytest
 from libcaf.plumbing import load_commit
 from libcaf.repository import Repository
 from pytest import CaptureFixture
@@ -266,3 +267,63 @@ def test_merge_in_detached_head_fast_forwards_correctly(temp_repo: Repository, c
     
     # Physical files updated correctly
     assert (temp_repo.working_dir / 'file_a.txt').read_text() == 'feature change\n'
+
+
+def test_merge_with_conflicts_and_clean_updates_saves_clean_files(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    """
+    Simulates a realistic merge where some files auto-merge/clean-update, and others conflict.
+    Verifies that clean updates are NOT lost when the CLI halts for conflict resolution.
+    """
+    # Setup Base
+    _set_working_tree_files(temp_repo, {
+        'clean.txt': 'base clean\n',
+        'conflict.txt': 'base conflict\n'
+    })
+    base_hash = temp_repo.commit_working_dir('QA', 'base')
+
+    # Setup Feature Branch
+    temp_repo.add_branch('feature')
+    temp_repo.update_ref('heads/feature', base_hash)
+    temp_repo.update_head(SymRef('heads/feature'))
+    _set_working_tree_files(temp_repo, {
+        'clean.txt': 'feature clean\n',      # Clean update
+        'conflict.txt': 'feature conflict\n' # Will cause conflict
+    })
+    _ = temp_repo.commit_working_dir('QA', 'feature change')
+
+    # Setup Main Branch
+    temp_repo.checkout(SymRef('heads/main'))
+    _set_working_tree_files(temp_repo, {
+        'conflict.txt': 'main conflict\n'    # Causes the conflict
+    })
+    temp_repo.commit_working_dir('QA', 'main change')
+
+    result = cli_commands.merge(
+        working_dir_path=str(temp_repo.working_dir),
+        target_ref='feature',
+        author='QA'
+    )
+
+    # Verify CLI stopped for conflict
+    assert result == -1
+
+    assert (temp_repo.working_dir / 'clean.txt').read_text() == 'feature clean\n'
+
+    # The conflict markers were written
+    conflict_content = (temp_repo.working_dir / 'conflict.txt').read_text()
+    assert '<<<<<<< HEAD' in conflict_content
+
+    # Resolve the conflict and test the Gatekeeper boundary
+    _set_working_tree_files(temp_repo, {
+        'conflict.txt': 'resolved conflict\n'
+    })
+
+    backup_file = temp_repo.working_dir / 'conflict.txt~MERGE_HEAD'
+    if backup_file.exists():
+        backup_file.unlink()
+
+    # Prove the gatekeeper allows the commit to proceed without throwing an error
+    try:
+        temp_repo.commit_working_dir('QA', 'Merge resolved')
+    except Exception as e:
+        pytest.fail(f"Gatekeeper incorrectly blocked the commit after resolution! Error: {e}")
