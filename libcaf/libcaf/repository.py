@@ -40,7 +40,11 @@ class MergeResult(Enum):
 class MergeReport:
     status: MergeResult
     commit_hash: Optional[HashRef] = None
-    auto_merged: dict[str, str] = field(default_factory=dict)
+    # 'clean_updates' holds paths mapping to blob hashes. 
+    # This includes 3-way auto-merges, brand new files, AND files updated cleanly by the source branch.
+    clean_updates: dict[str, str] = field(default_factory=dict) 
+    # Files that the source branch safely deleted
+    deletions: list[str] = field(default_factory=list)
     conflicts: list[tuple[str, MergeConflict]] = field(default_factory=list)
 
 @dataclass
@@ -965,14 +969,14 @@ class Repository:
         lca_commit = load_commit(self.objects_dir(), lca)
         merge_plan = merge_trees(lca_commit.tree_hash, target_commit.tree_hash, source_commit.tree_hash,
                                  lambda h: load_tree(self.objects_dir(), h))
-        root_hash, conflicts, auto_merged = compute_merge_tree(self.objects_dir(), merge_plan)
+        root_hash, conflicts, clean_updates, deletions = compute_merge_tree(self.objects_dir(), merge_plan)
         if conflicts:
-            return MergeReport(MergeResult.CONFLICTS, target_hash, auto_merged, conflicts)
+            return MergeReport(MergeResult.CONFLICTS, target_hash, clean_updates, deletions, conflicts)
         
         new_commit = Commit(root_hash, author, f'Merge {source_ref} into {target_ref}', int(datetime.now().timestamp()), [target_hash, source_hash])
         save_commit(self.objects_dir(), new_commit)
         new_commit_hash = hash_object(new_commit)
-        return MergeReport(MergeResult.MERGE_CREATED, new_commit_hash, auto_merged, conflicts)
+        return MergeReport(MergeResult.MERGE_CREATED, new_commit_hash, clean_updates, deletions, conflicts)
 
     @requires_repo
     def apply_conflicts_to_disk(self, conflicts: list[Tuple[str, MergeConflict]], source_hash: str) -> None:
@@ -1021,6 +1025,27 @@ class Repository:
                     restore_blob_to_path(objects_dir, conflict.theirs_hash, conflict_dest)
                 
         write_ref(self.merge_head_file(), HashRef(source_hash))
+    
+    @requires_repo
+    def apply_clean_updates_to_disk(self, merge_report: 'MergeReport') -> None:
+        """Apply all non-conflicting additions, updates, and deletions to the workspace."""
+        
+        # Apply all cleanly added, updated, or auto-merged files
+        for path_str, blob_hash in merge_report.clean_updates.items():
+            file_path = self.working_dir / path_str
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            restore_blob_to_path(self.objects_dir(), blob_hash, file_path)
+            
+        # Physically remove files that were cleanly deleted by the merge
+        for path_str in merge_report.deletions:
+            file_path = self.working_dir / path_str
+            if file_path.exists():
+                file_path.unlink()
+                
+            try:
+                file_path.parent.rmdir()
+            except OSError:
+                pass # Directory not empty, ignore
 
 def branch_ref(branch: str) -> SymRef:
     """Create a symbolic reference for a branch name.

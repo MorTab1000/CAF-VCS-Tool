@@ -17,6 +17,8 @@
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <system_error>
+#include <stdexcept>
 
 #include "caf.h"
 
@@ -27,6 +29,18 @@ std::string create_sub_dir(const std::string& content_root_dir, const std::strin
 void lock_file_with_timeout(int fd, int operation, int timeout_sec);
 void copy_file(const std::string& src, const std::string& dest);
 void create_content_path(const std::string& content_root_dir, const std::string& hash, std::string& output_path);
+
+// RAII Wrapper for the File Descriptor
+struct ScopedFileLock {
+    int fd;
+    ScopedFileLock(int descriptor) : fd(descriptor) {}
+    ~ScopedFileLock() {
+        if (fd >= 0) {
+            flock(fd, LOCK_UN);
+            close(fd);
+        }
+    }
+};
 
 std::string hash_file(const std::string& filename) {
     unsigned char hash[EVP_MAX_MD_SIZE];
@@ -334,6 +348,7 @@ void lock_file_with_timeout(int fd, int operation, int timeout_sec){
 
 void restore_blob_to_path(const std::string& content_root_dir, const std::string& hash, const std::string& dest_path) {
     std::filesystem::path dest(dest_path);
+    
     if (dest.has_parent_path()) {
         std::error_code ec;
         std::filesystem::create_directories(dest.parent_path(), ec);
@@ -343,18 +358,14 @@ void restore_blob_to_path(const std::string& content_root_dir, const std::string
     }
 
     int src_fd = open_content_for_reading(content_root_dir, hash);
+    ScopedFileLock lock(src_fd); // <-- This will auto-close/unlock when the function ends!
 
     std::string src_path;
     create_content_path(content_root_dir, hash, src_path);
 
-    try {
-        copy_file(src_path, dest_path);
-    } catch (const std::exception& e) {
-        flock(src_fd, LOCK_UN);
-        close(src_fd);
-        throw;
-    }
-
-    flock(src_fd, LOCK_UN);
-    close(src_fd);
+    std::filesystem::copy_file(
+        src_path, 
+        dest_path, 
+        std::filesystem::copy_options::overwrite_existing
+    );
 }

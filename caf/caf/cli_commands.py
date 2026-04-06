@@ -417,6 +417,7 @@ def merge(**kwargs) -> int:
                 return 0
                 
             case MergeResult.CONFLICTS:
+                repo.apply_clean_updates_to_disk(merge_report)
                 repo.apply_conflicts_to_disk(merge_report.conflicts, target_hash)
                 
                 _print_success(f'\n⚠️  Merge conflict detected when merging {target_ref}.')

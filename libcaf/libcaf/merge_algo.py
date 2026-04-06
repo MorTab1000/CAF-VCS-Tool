@@ -65,7 +65,19 @@ class MergeConflict:
     ours_type: Optional[TreeRecordType]
     theirs_type: Optional[TreeRecordType]
 
-MergePlan = Dict[str, Union[TreeRecord, MergeConflict, dict]]
+
+@dataclass
+class CleanUpdate:
+    """Wrapper for files added or modified by the target branch."""
+    record: TreeRecord
+
+@dataclass
+class CleanDelete:
+    """Wrapper for files cleanly deleted by the target branch."""
+    pass
+
+
+MergePlan = Dict[str, Union[TreeRecord, MergeConflict, CleanUpdate, CleanDelete, dict]]
 
 
 def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash: Optional[str], fetch_tree: Callable[[str], Tree]) -> MergePlan:
@@ -95,7 +107,9 @@ def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash:
         
         elif b_hash == o_hash:
             if t_hash:
-                result[path] = t_rec
+                result[path] = CleanUpdate(t_rec)
+            else:
+                result[path] = CleanDelete()
         
         elif b_hash == t_hash:
             if o_hash:
@@ -119,15 +133,15 @@ def merge_trees(base_hash: Optional[str], ours_hash: Optional[str], theirs_hash:
     return result
     
 
-def compute_merge_tree(objects_dir: Path, merge_result: MergePlan, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str]]:
+def compute_merge_tree(objects_dir: Path, merge_result: MergePlan, current_path: str = "") -> Tuple[Optional[str], list[Tuple[str, MergeConflict]], dict[str, str], list[str]]:
     records = {}
     conflicts = []
-    auto_merged = {}
+    clean_updates = {}
     computed_hashes = {}
+    deletions = []
     stack = [(("", merge_result, False))] # Stack stores: (current path, dictionary to process, visited flag)
     while stack:
         current_path, current_dict, visited = stack.pop()
-
 
         if not visited:
             stack.append((current_path, current_dict, True))
@@ -145,6 +159,11 @@ def compute_merge_tree(objects_dir: Path, merge_result: MergePlan, current_path:
                
                 if isinstance(value, TreeRecord):
                     records[name] = value
+                elif isinstance(value, CleanUpdate):
+                    records[name] = value.record
+                    clean_updates[full_path] = value.record.hash
+                elif isinstance(value, CleanDelete):
+                    deletions.append(full_path)
                 elif isinstance(value, dict):
                     if not full_path in computed_hashes:
                         has_conflict_in_dir = True
@@ -168,7 +187,7 @@ def compute_merge_tree(objects_dir: Path, merge_result: MergePlan, current_path:
                                     if is_clean:                                                                  
                                         merged_hash =  hash_and_save_blob(objects_dir, temp_file_path)
                                         records[name] = TreeRecord(TreeRecordType.BLOB, merged_hash, name)
-                                        auto_merged[full_path] = merged_hash                                        
+                                        clean_updates[full_path] = merged_hash                                        
                                     else:
                                         conflicts.append((full_path, value))
                                         has_conflict_in_dir = True
@@ -187,9 +206,9 @@ def compute_merge_tree(objects_dir: Path, merge_result: MergePlan, current_path:
    
     root_hash = computed_hashes.get("")
     if conflicts:
-        return root_hash, conflicts, auto_merged
+        return root_hash, conflicts, clean_updates, deletions
    
-    return root_hash, [], auto_merged # Return the hash of the root tree if no conflicts
+    return root_hash, [], clean_updates, deletions # Return the hash of the root tree if no conflicts
 
 
 def three_way_merge(

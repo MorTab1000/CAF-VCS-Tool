@@ -1,7 +1,7 @@
 from libcaf import Tree, TreeRecord, TreeRecordType
 from libcaf.plumbing import load_tree
 from libcaf.repository import Repository
-from libcaf.merge_algo import merge_trees, MergeConflict, compute_merge_tree, three_way_merge
+from libcaf.merge_algo import merge_trees, MergeConflict, compute_merge_tree, three_way_merge, CleanUpdate, CleanDelete
 from pathlib import Path
 import hashlib
 
@@ -45,7 +45,7 @@ def test_fast_forward_theirs_root() -> None:
     }
     result = merge_trees("base_root", "base_root", "theirs_root", lambda h: fake_db[h])
    
-    assert result == {"file.txt": TreeRecord(TreeRecordType.BLOB, "h2", "file.txt")}
+    assert result == {"file.txt": CleanUpdate(TreeRecord(TreeRecordType.BLOB, "h2", "file.txt"))}
 
 
 
@@ -136,7 +136,7 @@ def test_directory_recursion() -> None:
     result = merge_trees("base_root", "ours_root", "theirs_root", lambda h: fake_db[h])
 
 
-    assert result == {"src": {"a.txt": TreeRecord(TreeRecordType.BLOB, "h_a_mod", "a.txt"), "b.txt": TreeRecord(TreeRecordType.BLOB, "h_b_mod", "b.txt")}}
+    assert result == {"src": {"a.txt": TreeRecord(TreeRecordType.BLOB, "h_a_mod", "a.txt"), "b.txt": CleanUpdate(TreeRecord(TreeRecordType.BLOB, "h_b_mod", "b.txt"))}}
 
 
 
@@ -148,11 +148,12 @@ def test_compute_merge_tree_clean_files(temp_repo: Repository) -> None:
     }
 
 
-    new_tree_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), plan)
+    new_tree_hash, conflicts, clean_updated, deletions = compute_merge_tree(temp_repo.objects_dir(), plan)
    
     assert new_tree_hash is not None
     assert conflicts == []
-    assert auto_merged == {}
+    assert clean_updated == {}
+    assert deletions == []
 
 
     folder_prefix = new_tree_hash[:2]
@@ -170,12 +171,13 @@ def test_compute_merge_nested_directories(temp_repo: Repository) -> None:
     }
 
 
-    root_tree_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), plan)
+    root_tree_hash, conflicts, clean_updated, deletions = compute_merge_tree(temp_repo.objects_dir(), plan)
 
 
     assert root_tree_hash is not None
     assert conflicts == []
-    assert auto_merged == {}
+    assert clean_updated == {}
+    assert deletions == []
    
     root_folder_prefix = root_tree_hash[:2]
     assert (temp_repo.objects_dir() / root_folder_prefix / root_tree_hash).exists()
@@ -206,12 +208,13 @@ def test_compute_merge_with_structural_conflict(temp_repo: Repository) -> None:
             "broken_file.txt": conflict_obj
         }
     }
-    root_tree_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), plan)
+    root_tree_hash, conflicts, clean_updated, deletions = compute_merge_tree(temp_repo.objects_dir(), plan)
 
 
     assert root_tree_hash is None
     assert conflicts == [("nested/broken_file.txt", conflict_obj)]
-    assert auto_merged == {}
+    assert clean_updated == {}
+    assert deletions == []
 
 
 
@@ -226,21 +229,23 @@ def test_compute_merge_with_type_conflict(temp_repo: Repository) -> None:
     plan = {
         "conflict_item": conflict_obj
     }
-    root_tree_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), plan)
+    root_tree_hash, conflicts, clean_updated, deletions = compute_merge_tree(temp_repo.objects_dir(), plan)
 
 
     assert root_tree_hash is None
     assert conflicts == [("conflict_item", conflict_obj)]
-    assert auto_merged == {}
+    assert clean_updated == {}
+    assert deletions == []
 
 
 def test_compute_merge_empty_plan(temp_repo: Repository) -> None:
     plan = {}
-    root_tree_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), plan)
+    root_tree_hash, conflicts, clean_updated, deletions = compute_merge_tree(temp_repo.objects_dir(), plan)
 
     assert root_tree_hash is not None
     assert len(conflicts) == 0
-    assert len(auto_merged) == 0
+    assert len(clean_updated) == 0
+    assert deletions == []
    
     root_folder_prefix = root_tree_hash[:2]
     assert (temp_repo.objects_dir() / root_folder_prefix / root_tree_hash).exists()
@@ -276,21 +281,22 @@ def test_compute_merge_complex_structure(temp_repo: Repository) -> None:
 
 
     # 3. Run the engine
-    root_hash, conflicts, auto_merged = compute_merge_tree(temp_repo.objects_dir(), merge_plan)
+    root_hash, conflicts, clean_updated, deletions = compute_merge_tree(temp_repo.objects_dir(), merge_plan)
 
 
     # Root should be None because file2.txt has a conflict
     assert root_hash is None
    
-    # file1.txt should be in auto_merged
-    assert "file1.txt" in auto_merged
+    # file1.txt should be in clean_updated
+    assert "file1.txt" in clean_updated
    
-    f1_content = (objects_dir / auto_merged["file1.txt"][:2] / auto_merged["file1.txt"]).read_bytes()
+    f1_content = (objects_dir / clean_updated["file1.txt"][:2] / clean_updated["file1.txt"]).read_bytes()
     assert b"line1 modified\n" in f1_content
     assert b"line2\n" in f1_content
     assert b"line3 modified\n" in f1_content
    
-    assert "file2.txt" not in auto_merged
+    assert "file2.txt" not in clean_updated
+    assert deletions == []
     assert conflicts == [("file2.txt", MergeConflict(h2_base, h2_ours, h2_theirs, "content", TreeRecordType.BLOB, TreeRecordType.BLOB))]
 
 

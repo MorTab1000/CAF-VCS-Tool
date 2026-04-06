@@ -250,9 +250,9 @@ def test_merge_3way_auto_merge_same_file(temp_repo: Repository) -> None:
 
     root_tree = load_tree(temp_repo.objects_dir(), merged_commit.tree_hash)
     assert 'text.txt' in root_tree.records
-    assert 'text.txt' in report.auto_merged
+    assert 'text.txt' in report.clean_updates
 
-    merged_blob_hash = report.auto_merged['text.txt']
+    merged_blob_hash = report.clean_updates['text.txt']
     with open_content_for_reading(temp_repo.objects_dir(), merged_blob_hash) as merged_blob:
         merged_text = merged_blob.read().decode('utf-8')
 
