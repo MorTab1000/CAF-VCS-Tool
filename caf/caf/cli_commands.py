@@ -363,7 +363,7 @@ def merge(**kwargs) -> int:
             target_ref = HashRef(raw_target)
             try:
                 target_hash = repo.resolve_ref(target_ref)
-            except RefError:
+            except (RefError, OSError): 
                 pass # Handled below if it fails
         else:
             if raw_target.startswith('heads/') or raw_target.startswith('tags/'):
@@ -380,7 +380,7 @@ def merge(**kwargs) -> int:
                         target_ref = temp_ref
                         target_hash = possible_hash
                         break 
-                except FileNotFoundError:
+                except (RefError, OSError):
                     # Ignore the FileNotFoundError and try the next candidate in the list
                     continue
 
