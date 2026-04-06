@@ -423,8 +423,6 @@ class Repository:
                 except (OSError, MemoryError):
                     continue  
 
-            # 2. Conflicts are resolved! Add the second parent for the merge commit
-            from libcaf.ref import read_ref # Ensure this is imported at the top!
             merge_head_hash = str(read_ref(merge_head_file))
             parents.append(merge_head_hash)
         # ---------------------------------------------
