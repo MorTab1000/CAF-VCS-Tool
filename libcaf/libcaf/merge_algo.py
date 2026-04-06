@@ -68,12 +68,12 @@ class MergeConflict:
 
 @dataclass
 class CleanUpdate:
-    """Wrapper for files added or modified by the target branch."""
+    """Wrapper for files added or modified on the theirs/source side"""
     record: TreeRecord
 
 @dataclass
 class CleanDelete:
-    """Wrapper for files cleanly deleted by the target branch."""
+    """Wrapper for files cleanly deleted on the theirs/source side."""
     pass
 
 
