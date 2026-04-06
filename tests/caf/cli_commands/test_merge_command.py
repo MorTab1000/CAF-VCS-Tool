@@ -175,3 +175,55 @@ def test_commit_after_resolving_conflicts_creates_two_parent_commit(temp_repo: R
     assert len(new_commit.parents) == 2
     assert set(new_commit.parents) == {old_head, theirs_hash}
     assert not merge_head_file.exists()
+
+
+def test_merge_with_commit_hash_succeeds(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    _set_working_tree_files(temp_repo, {'file_a.txt': 'base\n'})
+    base_hash = temp_repo.commit_working_dir('QA', 'base')
+
+    # Setup feature branch with a new commit
+    temp_repo.add_branch('feature')
+    temp_repo.update_ref('heads/feature', base_hash)
+    temp_repo.update_head(SymRef('heads/feature'))
+    _set_working_tree_files(temp_repo, {'file_a.txt': 'feature change\n'})
+    
+    # Capture the raw 40-character commit hash
+    feature_hash = temp_repo.commit_working_dir('QA', 'feature change')
+
+    temp_repo.checkout(SymRef('heads/main'))
+
+    result = cli_commands.merge(
+        working_dir_path=str(temp_repo.working_dir),
+        target_ref=str(feature_hash), 
+        author='QA'
+    )
+
+    assert result == 0
+    assert 'fast-forward' in capsys.readouterr().out.lower()
+
+
+def test_merge_with_tag_succeeds(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    _set_working_tree_files(temp_repo, {'file_a.txt': 'base\n'})
+    base_hash = temp_repo.commit_working_dir('QA', 'base')
+
+    # Setup feature branch with a new commit
+    temp_repo.add_branch('feature')
+    temp_repo.update_ref('heads/feature', base_hash)
+    temp_repo.update_head(SymRef('heads/feature'))
+    _set_working_tree_files(temp_repo, {'file_a.txt': 'feature change\n'})
+    feature_hash = temp_repo.commit_working_dir('QA', 'feature change')
+
+    # Create a tag pointing to the feature commit
+    temp_repo.create_tag('v1.0', feature_hash)
+
+    # Go back to main
+    temp_repo.checkout(SymRef('heads/main'))
+
+    result = cli_commands.merge(
+        working_dir_path=str(temp_repo.working_dir),
+        target_ref='v1.0', 
+        author='QA'
+    )
+
+    assert result == 0
+    assert 'fast-forward' in capsys.readouterr().out.lower()
