@@ -7,9 +7,9 @@ from pathlib import Path
 
 from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH
 from libcaf.plumbing import hash_file as plumbing_hash_file
-from libcaf.ref import SymRef, HashRef
+from libcaf.ref import SymRef, HashRef, RefError
 from libcaf.repository import (AddedDiff, Diff, ModifiedDiff, MovedToDiff, RemovedDiff, Repository, RepositoryError,
-                               RepositoryNotFoundError, MergeReport, MergeResult)
+                               RepositoryNotFoundError, MergeResult)
 
 
 def _print_error(message: str) -> None:
@@ -355,17 +355,40 @@ def merge(**kwargs) -> int:
         
     try:
         is_hash = len(raw_target) == HASH_LENGTH and all(c in '0123456789abcdef' for c in raw_target.lower())
+        
+        target_ref = None
+        target_hash = None
+
         if is_hash:
             target_ref = HashRef(raw_target)
+            try:
+                target_hash = repo.resolve_ref(target_ref)
+            except RefError:
+                pass # Handled below if it fails
         else:
-            ref_path = raw_target if raw_target.startswith('heads/') else f'heads/{raw_target}'
-            target_ref = SymRef(ref_path)
-        
-        target_hash = repo.resolve_ref(target_ref)
-        if not target_hash:
-            _print_error(f'Could not resolve reference: {target_ref}')
+            if raw_target.startswith('heads/') or raw_target.startswith('tags/'):
+                candidates = [raw_target]
+            else:
+                # Ambiguous input! Try branch first, then fallback to tag
+                candidates = [f'heads/{raw_target}', f'tags/{raw_target}']
+            
+            for candidate in candidates:
+                try:
+                    temp_ref = SymRef(candidate)
+                    possible_hash = repo.resolve_ref(temp_ref)
+                    if possible_hash:
+                        target_ref = temp_ref
+                        target_hash = possible_hash
+                        break 
+                except FileNotFoundError:
+                    # Ignore the FileNotFoundError and try the next candidate in the list
+                    continue
+
+        if not target_hash or not target_ref:
+            _print_error(f'Could not resolve branch, tag, or commit reference: {raw_target}')
             return -1
 
+        # --- 2. CALL THE ENGINE ---
         current_head = repo.head_ref()
         merge_report = repo.merge(current_head, target_ref, author)
         
