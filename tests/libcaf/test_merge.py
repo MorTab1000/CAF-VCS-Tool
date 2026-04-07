@@ -678,3 +678,33 @@ def test_apply_clean_updates_deletes_files_and_empty_dirs(temp_repo: Repository)
     assert not (temp_repo.working_dir / "dir_to_keep" / "delete_me.txt").exists()
     assert (temp_repo.working_dir / "dir_to_keep" / "file.txt").exists()
     assert (temp_repo.working_dir / "dir_to_keep").exists()
+
+
+def test_abort_merge_success(temp_repo: Repository) -> None:
+    """Aborting a merge should remove merge state and restore the HEAD snapshot."""
+    original_content = "original target content\n"
+    _set_working_tree_files(temp_repo, {
+        "target.txt": original_content,
+    })
+
+    head_hash = temp_repo.commit_working_dir('Author', 'base commit')
+
+    merge_head_file = temp_repo.merge_head_file()
+    merge_head_file.write_text(head_hash)
+
+    conflict_sidecar = temp_repo.working_dir / 'conflict.txt~MERGE_HEAD'
+    conflict_sidecar.write_text('conflict sidecar\n')
+
+    (temp_repo.working_dir / 'target.txt').write_text('modified during merge\n')
+
+    temp_repo.abort_merge()
+
+    assert not merge_head_file.exists()
+    assert not conflict_sidecar.exists()
+    assert (temp_repo.working_dir / 'target.txt').read_text() == original_content
+
+
+def test_abort_merge_no_merge_in_progress(temp_repo: Repository) -> None:
+    """Aborting without an active merge should fail cleanly."""
+    with pytest.raises(RepositoryError, match='No merge in progress'):
+        temp_repo.abort_merge()
