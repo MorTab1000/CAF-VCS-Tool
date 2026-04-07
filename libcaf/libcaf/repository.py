@@ -1053,6 +1053,46 @@ class Repository:
                 file_path.parent.rmdir()
             except OSError:
                 pass # Directory not empty, ignore
+    
+    @requires_repo
+    def abort_merge(self) -> None:
+        """Abort an in-progress merge, cleaning up sidecars and restoring HEAD."""
+        
+        merge_head_file = self.merge_head_file()
+        
+        # Ensure we are actually in a merge
+        if not merge_head_file.exists():
+            raise RepositoryError('No merge in progress to abort.')
+
+        head_hash = self.head_commit()
+        if not head_hash:
+            raise RepositoryError('Cannot abort merge: HEAD commit not found.')
+
+        # Sweep and delete all structural conflict backup sidecars (~HEAD, ~MERGE_HEAD)
+        for file_path in self.working_dir.rglob('*'):
+            if self.repo_dir.name in file_path.parts:
+                continue
+                
+            if file_path.name.endswith('~HEAD') or file_path.name.endswith('~MERGE_HEAD'):
+                if file_path.is_file():
+                    file_path.unlink()
+
+        # Sweep Ghost Files (Clean additions from the merge)
+        head_blob_map = self._collect_blob_map(head_hash)
+        
+        for file_path in self.working_dir.rglob('*'):
+            if self.repo_dir.name in file_path.parts or not file_path.is_file():
+                continue
+                
+            rel_path = file_path.relative_to(self.working_dir)
+            if rel_path not in head_blob_map:
+                file_path.unlink()
+
+        # Physically restore the working directory to the HEAD commit state
+        commit = load_commit(self.objects_dir(), head_hash)
+        extract_tree_to_disk(self.objects_dir(), commit.tree_hash, self.working_dir)
+
+        merge_head_file.unlink()
 
 def branch_ref(branch: str) -> SymRef:
     """Create a symbolic reference for a branch name.
