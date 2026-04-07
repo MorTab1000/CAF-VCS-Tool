@@ -708,3 +708,42 @@ def test_abort_merge_no_merge_in_progress(temp_repo: Repository) -> None:
     """Aborting without an active merge should fail cleanly."""
     with pytest.raises(RepositoryError, match='No merge in progress'):
         temp_repo.abort_merge()
+
+
+def test_abort_merge_sweeps_ghost_files(temp_repo: Repository) -> None:
+    """Aborting a merge should delete untracked files introduced during the merge."""
+    _set_working_tree_files(temp_repo, {"target.txt": "base\n"})
+    temp_repo.commit_working_dir('Author', 'base commit')
+
+    temp_repo.merge_head_file().write_text("fake_merge_hash")
+    
+    ghost_file = temp_repo.working_dir / 'new_feature.py'
+    ghost_file.write_text('print("hello")\n')
+
+    temp_repo.abort_merge()
+
+    assert not ghost_file.exists()
+    assert (temp_repo.working_dir / 'target.txt').exists() # Base file survives
+
+
+def test_abort_merge_transactional_safety(temp_repo: Repository) -> None:
+    """If the abort process crashes halfway through, MERGE_HEAD must remain."""
+    # Setup a clean base commit
+    _set_working_tree_files(temp_repo, {"target.txt": "base\n"})
+    head_hash = temp_repo.commit_working_dir('Author', 'base commit')
+
+    # Simulate the merge state
+    merge_head_file = temp_repo.merge_head_file()
+    merge_head_file.write_text("fake_merge_hash")
+
+    # Delete the commit object from the physical hard drive.
+    commit_file = temp_repo.objects_dir() / head_hash[:2] / head_hash
+    commit_file.unlink()
+
+    # Attempt to abort. It will sweep the sidecars, but crash when it tries 
+    # to load the missing commit to extract the tree.
+    with pytest.raises(Exception):
+        temp_repo.abort_merge()
+
+    # The repository is safely locked!
+    assert merge_head_file.exists()
