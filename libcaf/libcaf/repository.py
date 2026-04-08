@@ -1056,11 +1056,9 @@ class Repository:
     
     @requires_repo
     def abort_merge(self) -> None:
-        """Abort an in-progress merge, cleaning up sidecars and restoring HEAD."""
+        """Abort an in-progress merge, safely restoring HEAD."""
         
         merge_head_file = self.merge_head_file()
-        
-        # Ensure we are actually in a merge
         if not merge_head_file.exists():
             raise RepositoryError('No merge in progress to abort.')
 
@@ -1070,12 +1068,15 @@ class Repository:
 
         merge_head_hash = merge_head_file.read_text().strip()
         head_blob_map = self._collect_blob_map(head_hash)
-        
         try:
             merge_blob_map = self._collect_blob_map(merge_head_hash) if merge_head_hash else {}
         except RuntimeError:
             merge_blob_map = {}
 
+        commit = load_commit(self.objects_dir(), head_hash)
+        extract_tree_to_disk(self.objects_dir(), commit.tree_hash, self.working_dir)
+
+        # Safe Cleanup Sweep (Sidecars and Ghost Files)
         for file_path in self.working_dir.rglob('*'):
             if self.repo_dir.name in file_path.parts or not file_path.is_file():
                 continue
@@ -1083,31 +1084,26 @@ class Repository:
             # Sweep structural conflict backup sidecars
             if file_path.name.endswith('~HEAD') or file_path.name.endswith('~MERGE_HEAD'):
                 file_path.unlink()
-                continue  # Skip to the next file, no need to check ghost logic
+                continue 
 
-            # Sweep Ghost Files (Clean additions from the merge)
-            rel_path_str = file_path.relative_to(self.working_dir)
-            
-            if rel_path_str not in head_blob_map:
-                # Only delete if the file was specifically introduced by the merge
-                if rel_path_str in merge_blob_map:
-                    file_path.unlink()
-        
+            # Sweep Ghost Files
+            rel_path = file_path.relative_to(self.working_dir)
+            in_head = (rel_path in head_blob_map) or (str(rel_path) in head_blob_map)
+            in_merge = (rel_path in merge_blob_map) or (str(rel_path) in merge_blob_map)
+
+            if not in_head and in_merge:
+                file_path.unlink()
+
+        # Bottom-Up Empty Directory Prune
         repo_dirs = [d for d in self.working_dir.rglob('*') 
                     if d.is_dir() and self.repo_dir.name not in d.parts]
-        
-        # Sort them by depth descending (longest paths first) to guarantee a bottom-up sweep
         repo_dirs.sort(key=lambda p: len(p.parts), reverse=True)
         
         for d in repo_dirs:
-            # If the directory is completely empty, delete it
             if not any(d.iterdir()):
                 d.rmdir()
 
-        # Physically restore the working directory to the HEAD commit state
-        commit = load_commit(self.objects_dir(), head_hash)
-        extract_tree_to_disk(self.objects_dir(), commit.tree_hash, self.working_dir)
-
+        # Unlock the repo by completing the abort
         merge_head_file.unlink()
 
 
