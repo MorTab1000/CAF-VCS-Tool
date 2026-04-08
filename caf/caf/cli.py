@@ -208,7 +208,7 @@ def cli() -> None:
                     'help': '🛑 Abort the current conflict resolution process',
                     'default': False,
                     'flag': True,
-                    'short_flag': 'a', # Allows both -a and --abort
+                    'short_flag': 'a',  # Allows both -a and --abort
                 },
             },
             'help': '🔀 Merge a branch or commit into the current active branch',
