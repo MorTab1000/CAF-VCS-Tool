@@ -345,7 +345,7 @@ def merge(**kwargs) -> int:
     repo = _repo_from_cli_kwargs(kwargs)
     if kwargs.get('abort'):
         try:
-            repo.abort_merge() 
+            repo.abort_merge()
             _print_success("✅ Merge aborted successfully. Workspace restored.")
             return 0
         except RepositoryError as e:
