@@ -343,6 +343,15 @@ def _print_diffs(diff_stack: MutableSequence[tuple[Sequence[Diff], int]]) -> Non
 
 def merge(**kwargs) -> int:
     repo = _repo_from_cli_kwargs(kwargs)
+    if kwargs.get('abort'):
+        try:
+            repo.abort_merge() 
+            _print_success("✅ Merge aborted successfully. Workspace restored.")
+            return 0
+        except RepositoryError as e:
+            _print_error(f"❌ Error aborting merge: {e}")
+            return -1
+
     raw_target = kwargs.get('target_ref')
     author = kwargs.get('author') or ""
     
