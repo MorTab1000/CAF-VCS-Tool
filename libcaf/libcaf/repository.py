@@ -1092,6 +1092,17 @@ class Repository:
                 # Only delete if the file was specifically introduced by the merge
                 if rel_path_str in merge_blob_map:
                     file_path.unlink()
+        
+        repo_dirs = [d for d in self.working_dir.rglob('*') 
+                    if d.is_dir() and self.repo_dir.name not in d.parts]
+        
+        # Sort them by depth descending (longest paths first) to guarantee a bottom-up sweep
+        repo_dirs.sort(key=lambda p: len(p.parts), reverse=True)
+        
+        for d in repo_dirs:
+            # If the directory is completely empty, delete it
+            if not any(d.iterdir()):
+                d.rmdir()
 
         # Physically restore the working directory to the HEAD commit state
         commit = load_commit(self.objects_dir(), head_hash)
