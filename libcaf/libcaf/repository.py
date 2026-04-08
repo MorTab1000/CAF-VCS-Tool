@@ -820,43 +820,50 @@ class Repository:
         self._apply_pass3_writes(flattened_diffs, target_blob_map)
 
     @requires_repo
-    def checkout(self, target_ref: Ref) -> None:
+    def checkout(self, target_ref: Ref | str) -> None:
         """Checkout a target reference into the working directory and update HEAD."""
         
-        # Normalize the reference
+        # Normalize the incoming reference
         safe_ref = coerce_to_ref(target_ref)
 
+        is_branch = False
+        full_branch_ref = None
+
         if isinstance(safe_ref, SymRef):
-            ref_str = str(safe_ref)
-            if not ref_str.startswith('heads/') and not ref_str.startswith('tags/'):
-                if self.branch_exists(safe_ref):
-                    safe_ref = SymRef(f"heads/{ref_str}")
+            # Extract the raw string from the SymRef object
+            raw_str = ""
+            match safe_ref:
+                case SymRef(v): raw_str = v
+                case _: raw_str = str(safe_ref)
+
+            # Strip the prefix to get the pure short name (e.g., 'heads/main' -> 'main')
+            short_name = raw_str
+            if short_name.startswith('heads/'):
+                short_name = short_name[6:]
+
+            # Check branch_exists using the short name!
+            if self.branch_exists(SymRef(short_name)):
+                is_branch = True
+                # Lock in the fully qualified path for resolving and attaching
+                full_branch_ref = SymRef(f"heads/{short_name}")
+                safe_ref = full_branch_ref  
 
         target_hash = self.resolve_ref(safe_ref)
         
         if target_hash is None:
             # The Empty Branch Rescue
-            is_empty_branch = False
-            if isinstance(safe_ref, SymRef):
-                ref_str = str(safe_ref)
-                if ref_str.startswith('heads/'):
-                    # Strip 'heads/' to check if the underlying branch exists
-                    is_empty_branch = self.branch_exists(SymRef(ref_str[6:]))
-                else:
-                    is_empty_branch = self.branch_exists(safe_ref)
-            
-            if is_empty_branch:
-                self.update_head(safe_ref)
-                return  # Skip syncing the working directory.
+            if is_branch:
+                self.update_head(full_branch_ref)
+                return  # Skip syncing
             else:
                 raise RefError(f'Cannot resolve reference {target_ref}')
 
         self.sync_working_dir_to_commit(target_hash)
         
         # Update HEAD (Attach vs. Detach)
-        if isinstance(safe_ref, SymRef) and str(safe_ref).startswith('heads/'):
+        if is_branch:
             # It's a branch: Attach HEAD
-            self.update_head(safe_ref)
+            self.update_head(full_branch_ref)
         else:
             # It's a tag or a raw commit hash: Detach HEAD
             self.update_head(HashRef(target_hash))
