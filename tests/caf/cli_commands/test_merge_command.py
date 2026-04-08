@@ -330,6 +330,9 @@ def test_merge_with_conflicts_and_clean_updates_saves_clean_files(temp_repo: Rep
 
 
 def test_merge_cli_abort_success(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    (temp_repo.working_dir / 'init.txt').write_text('init\n')
+    temp_repo.commit_working_dir('Author', 'Base commit')
+
     merge_head = temp_repo.merge_head_file()
     merge_head.write_text('0' * 40)
 
