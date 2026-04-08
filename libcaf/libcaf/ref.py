@@ -65,3 +65,14 @@ def write_ref(ref_file: Path, ref: Ref) -> None:
             case _:
                 msg = f'Invalid reference type: {type(ref)}'
                 raise RefError(msg)
+
+
+def coerce_to_ref(target: Ref | str) -> Ref:
+        """Convert a string target into a strongly-typed Ref object."""
+        if not isinstance(target, str):
+            return target
+            
+        if len(target) == HASH_LENGTH and all(c in HASH_CHARSET for c in target):
+            return HashRef(target)
+            
+        return SymRef(target)
