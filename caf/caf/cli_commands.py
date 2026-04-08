@@ -346,10 +346,10 @@ def merge(**kwargs) -> int:
     if kwargs.get('abort'):
         try:
             repo.abort_merge()
-            _print_success("✅ Merge aborted successfully. Workspace restored.")
+            _print_success('✅ Merge aborted successfully. Workspace restored.')
             return 0
         except RepositoryError as e:
-            _print_error(f"Failed to abort merge: {e}")
+            _print_error(f'Failed to abort merge: {e}')
             return -1
 
     raw_target = kwargs.get('target_ref')
