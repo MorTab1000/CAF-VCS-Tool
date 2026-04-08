@@ -1066,9 +1066,10 @@ class Repository:
         if not head_hash:
             raise RepositoryError('Cannot abort merge: HEAD commit not found.')
 
-        merge_head_hash = merge_head_file.read_text().strip()
         head_blob_map = self._collect_blob_map(head_hash)
         try:
+            raw_hash = merge_head_file.read_text().strip()
+            merge_head_hash = HashRef(raw_hash) if raw_hash else None
             merge_blob_map = self._collect_blob_map(merge_head_hash) if merge_head_hash else {}
         except RuntimeError:
             merge_blob_map = {}
