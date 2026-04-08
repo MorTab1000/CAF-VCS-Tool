@@ -447,3 +447,33 @@ def merge(**kwargs) -> int:
     except Exception as e:  # noqa: BLE001
         _print_error(f'Unexpected error during merge: {e}')
         return -1
+
+
+def checkout(**kwargs) -> int:
+    repo = _repo_from_cli_kwargs(kwargs)
+    target = kwargs.get('target_ref') 
+    create_branch = kwargs.get('branch')
+
+    if not target:
+        _print_error("No branch or commit specified.")
+        return -1
+
+    try:
+        if create_branch:
+            try:
+                repo.add_branch(target)
+                _print_success(f"Created branch '{target}'")
+            except RepositoryError as e:
+                _print_error(f"❌ Error: {e}")
+                return -1
+
+        repo.checkout(target)
+        _print_success(f"Switched to '{target}'")
+        return 0
+
+    except RefError:
+        _print_error(f"Cannot resolve '{target}'. Does the branch exist?")
+        return -1
+    except Exception as e:
+        _print_error(f"Error during checkout: {e}")
+        return -1
