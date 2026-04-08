@@ -349,7 +349,7 @@ def merge(**kwargs) -> int:
             _print_success("✅ Merge aborted successfully. Workspace restored.")
             return 0
         except RepositoryError as e:
-            _print_error(f"❌ Error aborting merge: {e}")
+            _print_error(f"Failed to abort merge: {e}")
             return -1
 
     raw_target = kwargs.get('target_ref')
