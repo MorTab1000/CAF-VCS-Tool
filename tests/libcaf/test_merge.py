@@ -4,6 +4,7 @@ from datetime import datetime
 from libcaf.repository import Repository, MergeResult, RepositoryError, branch_ref, MergeReport
 from libcaf.merge_algo import find_lca, MergeConflict
 from libcaf import Commit, TreeRecord, TreeRecordType
+from libcaf.ref import HashRef
 from libcaf.plumbing import save_commit, hash_object, load_commit, open_content_for_reading, load_tree
 
 
@@ -678,3 +679,58 @@ def test_apply_clean_updates_deletes_files_and_empty_dirs(temp_repo: Repository)
     assert not (temp_repo.working_dir / "dir_to_keep" / "delete_me.txt").exists()
     assert (temp_repo.working_dir / "dir_to_keep" / "file.txt").exists()
     assert (temp_repo.working_dir / "dir_to_keep").exists()
+
+
+def test_abort_merge_success(temp_repo: Repository) -> None:
+    """Aborting a merge should remove merge state and restore the HEAD snapshot."""
+    original_content = "original target content\n"
+    _set_working_tree_files(temp_repo, {
+        "target.txt": original_content,
+    })
+
+    head_hash = temp_repo.commit_working_dir('Author', 'base commit')
+
+    merge_head_file = temp_repo.merge_head_file()
+    merge_head_file.write_text(head_hash)
+
+    conflict_sidecar = temp_repo.working_dir / 'conflict.txt~MERGE_HEAD'
+    conflict_sidecar.write_text('conflict sidecar\n')
+
+    (temp_repo.working_dir / 'target.txt').write_text('modified during merge\n')
+
+    temp_repo.abort_merge()
+
+    assert not merge_head_file.exists()
+    assert not conflict_sidecar.exists()
+    assert (temp_repo.working_dir / 'target.txt').read_text() == original_content
+
+
+def test_abort_merge_no_merge_in_progress(temp_repo: Repository) -> None:
+    """Aborting without an active merge should fail cleanly."""
+    with pytest.raises(RepositoryError, match='No merge in progress'):
+        temp_repo.abort_merge()
+
+
+def test_abort_merge_sweeps_ghost_files(temp_repo: Repository) -> None:
+    """Aborting a merge should delete untracked files introduced during the merge."""
+    # Create the Base commit
+    _set_working_tree_files(temp_repo, {"target.txt": "base\n"})
+    temp_repo.commit_working_dir('Author', 'base commit')
+    base_hash = temp_repo.head_commit()
+
+    # Create the "branch" commit so it physically exists in the database
+    ghost_file = temp_repo.working_dir / 'new_feature.py'
+    ghost_file.write_text('print("hello")\n')
+    temp_repo.commit_working_dir('Author', 'merge branch')
+    merge_hash = temp_repo.head_commit()
+
+    # Rewind HEAD back to base to simulate the state before the merge started
+    # Use the proper API to update HEAD to a commit in detached state
+    temp_repo.update_head(HashRef(base_hash))
+
+    # Set up the in-progress merge state
+    temp_repo.merge_head_file().write_text(merge_hash)
+
+    temp_repo.abort_merge()
+    
+    assert not ghost_file.exists()

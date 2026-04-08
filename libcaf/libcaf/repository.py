@@ -1053,6 +1053,60 @@ class Repository:
                 file_path.parent.rmdir()
             except OSError:
                 pass # Directory not empty, ignore
+    
+    @requires_repo
+    def abort_merge(self) -> None:
+        """Abort an in-progress merge, safely restoring HEAD."""
+        
+        merge_head_file = self.merge_head_file()
+        if not merge_head_file.exists():
+            raise RepositoryError('No merge in progress to abort.')
+
+        head_hash = self.head_commit()
+        if not head_hash:
+            raise RepositoryError('Cannot abort merge: HEAD commit not found.')
+
+        head_blob_map = self._collect_blob_map(head_hash)
+        try:
+            raw_hash = merge_head_file.read_text().strip()
+            merge_head_hash = HashRef(raw_hash) if raw_hash else None
+            merge_blob_map = self._collect_blob_map(merge_head_hash) if merge_head_hash else {}
+        except RuntimeError:
+            merge_blob_map = {}
+
+        commit = load_commit(self.objects_dir(), head_hash)
+        extract_tree_to_disk(self.objects_dir(), commit.tree_hash, self.working_dir)
+
+        # Safe Cleanup Sweep (Sidecars and Ghost Files)
+        for file_path in self.working_dir.rglob('*'):
+            if self.repo_dir.name in file_path.parts or not file_path.is_file():
+                continue
+                
+            # Sweep structural conflict backup sidecars
+            if file_path.name.endswith('~HEAD') or file_path.name.endswith('~MERGE_HEAD'):
+                file_path.unlink()
+                continue 
+
+            # Sweep Ghost Files
+            rel_path = file_path.relative_to(self.working_dir)
+            in_head = (rel_path in head_blob_map) or (str(rel_path) in head_blob_map)
+            in_merge = (rel_path in merge_blob_map) or (str(rel_path) in merge_blob_map)
+
+            if not in_head and in_merge:
+                file_path.unlink()
+
+        # Bottom-Up Empty Directory Prune
+        repo_dirs = [d for d in self.working_dir.rglob('*') 
+                    if d.is_dir() and self.repo_dir.name not in d.parts]
+        repo_dirs.sort(key=lambda p: len(p.parts), reverse=True)
+        
+        for d in repo_dirs:
+            if not any(d.iterdir()):
+                d.rmdir()
+
+        # Unlock the repo by completing the abort
+        merge_head_file.unlink()
+
 
 def branch_ref(branch: str) -> SymRef:
     """Create a symbolic reference for a branch name.

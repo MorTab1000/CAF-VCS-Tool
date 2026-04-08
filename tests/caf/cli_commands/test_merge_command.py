@@ -327,3 +327,31 @@ def test_merge_with_conflicts_and_clean_updates_saves_clean_files(temp_repo: Rep
         temp_repo.commit_working_dir('QA', 'Merge resolved')
     except Exception as e:
         pytest.fail(f"Gatekeeper incorrectly blocked the commit after resolution! Error: {e}")
+
+
+def test_merge_cli_abort_success(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    (temp_repo.working_dir / 'init.txt').write_text('init\n')
+    temp_repo.commit_working_dir('Author', 'Base commit')
+
+    merge_head = temp_repo.merge_head_file()
+    merge_head.write_text(temp_repo.head_commit())
+
+    result = cli_commands.merge(
+        working_dir_path=str(temp_repo.working_dir),
+        abort=True,
+    )
+
+    assert result == 0
+    captured = capsys.readouterr()
+    assert 'Merge aborted successfully' in captured.out
+
+
+def test_merge_cli_abort_fails_clean_repo(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    result = cli_commands.merge(
+        working_dir_path=str(temp_repo.working_dir),
+        abort=True,
+    )
+
+    assert result == -1
+    captured = capsys.readouterr()
+    assert 'No merge in progress' in (captured.out + captured.err)

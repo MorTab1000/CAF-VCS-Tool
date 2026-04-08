@@ -196,10 +196,19 @@ def cli() -> None:
                 'target_ref': {
                     'type': str,
                     'help': '🔀 The branch, tag, or commit hash to merge into the current branch',
+                    'nargs': '?'
                 },
                 'author': {
                     'type': str,
                     'help': '👤 Name of the commit author (required for clean auto-commits)',
+                    'nargs': '?'
+                },
+                'abort': {
+                    'type': None,
+                    'help': '🛑 Abort the current conflict resolution process',
+                    'default': False,
+                    'flag': True,
+                    'short_flag': 'a',  # Allows both -a and --abort
                 },
             },
             'help': '🔀 Merge a branch or commit into the current active branch',
@@ -223,7 +232,10 @@ def cli() -> None:
                 command_sub.add_argument(f'--{arg_name}', type=arg_type, help=f'{arg_help} (default: %(default)s)',
                                          default=arg_default)
             else:
-                command_sub.add_argument(arg_name, type=arg_type, help=arg_help)
+                if 'nargs' in arg_info:
+                    command_sub.add_argument(arg_name, type=arg_type, help=arg_help, nargs=arg_info['nargs'])
+                else:
+                    command_sub.add_argument(arg_name, type=arg_type, help=arg_help)
 
     command_args = parser.parse_args()
     if command_args.command is None:
