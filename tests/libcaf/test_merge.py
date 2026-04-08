@@ -712,25 +712,25 @@ def test_abort_merge_no_merge_in_progress(temp_repo: Repository) -> None:
 
 
 def test_abort_merge_sweeps_ghost_files(temp_repo: Repository) -> None:
-        """Aborting a merge should delete untracked files introduced during the merge."""
-        # Create the Base commit
-        _set_working_tree_files(temp_repo, {"target.txt": "base\n"})
-        temp_repo.commit_working_dir('Author', 'base commit')
-        base_hash = temp_repo.head_commit()
+    """Aborting a merge should delete untracked files introduced during the merge."""
+    # Create the Base commit
+    _set_working_tree_files(temp_repo, {"target.txt": "base\n"})
+    temp_repo.commit_working_dir('Author', 'base commit')
+    base_hash = temp_repo.head_commit()
+
+    # Create the "branch" commit so it physically exists in the database
+    ghost_file = temp_repo.working_dir / 'new_feature.py'
+    ghost_file.write_text('print("hello")\n')
+    temp_repo.commit_working_dir('Author', 'merge branch')
+    merge_hash = temp_repo.head_commit()
+
+    # Rewind HEAD back to base to simulate the state before the merge started
+    # Use the proper API to update HEAD to a commit in detached state
+    temp_repo.update_head(HashRef(base_hash))
+
+    # Set up the in-progress merge state
+    temp_repo.merge_head_file().write_text(merge_hash)
+
+    temp_repo.abort_merge()
     
-        # Create the "branch" commit so it physically exists in the database
-        ghost_file = temp_repo.working_dir / 'new_feature.py'
-        ghost_file.write_text('print("hello")\n')
-        temp_repo.commit_working_dir('Author', 'merge branch')
-        merge_hash = temp_repo.head_commit()
-    
-        # Rewind HEAD back to base to simulate the state before the merge started
-        # Use the proper API to update HEAD to a commit in detached state
-        temp_repo.update_head(HashRef(base_hash))
-    
-        # Set up the in-progress merge state
-        temp_repo.merge_head_file().write_text(merge_hash)
-    
-        temp_repo.abort_merge()
-        
-        assert not ghost_file.exists()
+    assert not ghost_file.exists()
