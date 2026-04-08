@@ -1068,31 +1068,37 @@ class Repository:
         if not head_hash:
             raise RepositoryError('Cannot abort merge: HEAD commit not found.')
 
-        # Sweep and delete all structural conflict backup sidecars (~HEAD, ~MERGE_HEAD)
-        for file_path in self.working_dir.rglob('*'):
-            if self.repo_dir.name in file_path.parts:
-                continue
-                
-            if file_path.name.endswith('~HEAD') or file_path.name.endswith('~MERGE_HEAD'):
-                if file_path.is_file():
-                    file_path.unlink()
-
-        # Sweep Ghost Files (Clean additions from the merge)
+        merge_head_hash = merge_head_file.read_text().strip()
         head_blob_map = self._collect_blob_map(head_hash)
         
+        try:
+            merge_blob_map = self._collect_blob_map(merge_head_hash) if merge_head_hash else {}
+        except RuntimeError:
+            merge_blob_map = {}
+
         for file_path in self.working_dir.rglob('*'):
             if self.repo_dir.name in file_path.parts or not file_path.is_file():
                 continue
                 
-            rel_path = file_path.relative_to(self.working_dir)
-            if rel_path not in head_blob_map:
+            # Sweep structural conflict backup sidecars
+            if file_path.name.endswith('~HEAD') or file_path.name.endswith('~MERGE_HEAD'):
                 file_path.unlink()
+                continue  # Skip to the next file, no need to check ghost logic
+
+            # Sweep Ghost Files (Clean additions from the merge)
+            rel_path_str = file_path.relative_to(self.working_dir)
+            
+            if rel_path_str not in head_blob_map:
+                # Only delete if the file was specifically introduced by the merge
+                if rel_path_str in merge_blob_map:
+                    file_path.unlink()
 
         # Physically restore the working directory to the HEAD commit state
         commit = load_commit(self.objects_dir(), head_hash)
         extract_tree_to_disk(self.objects_dir(), commit.tree_hash, self.working_dir)
 
         merge_head_file.unlink()
+
 
 def branch_ref(branch: str) -> SymRef:
     """Create a symbolic reference for a branch name.

@@ -334,7 +334,7 @@ def test_merge_cli_abort_success(temp_repo: Repository, capsys: CaptureFixture[s
     temp_repo.commit_working_dir('Author', 'Base commit')
 
     merge_head = temp_repo.merge_head_file()
-    merge_head.write_text('0' * 40)
+    merge_head.write_text(temp_repo.head_commit()) 
 
     result = cli_commands.merge(
         working_dir_path=str(temp_repo.working_dir),
