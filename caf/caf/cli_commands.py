@@ -464,7 +464,7 @@ def checkout(**kwargs) -> int:
                 repo.add_branch(target)
                 _print_success(f"Created branch '{target}'")
             except RepositoryError as e:
-                _print_error(f"❌ Error: {e}")
+                _print_error(f"{e}")
                 return -1
 
         repo.checkout(target)
