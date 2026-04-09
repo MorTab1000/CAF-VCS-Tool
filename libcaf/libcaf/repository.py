@@ -122,9 +122,10 @@ class Repository:
         heads_dir = self.heads_dir()
         heads_dir.mkdir(parents=True)
 
-        self.add_branch(default_branch)
+        # self.add_branch(default_branch)
 
-        write_ref(self.head_file(), branch_ref(default_branch))
+        # write_ref(self.head_file(), branch_ref(default_branch))
+        write_ref(self.head_file(), SymRef(f"heads/{default_branch}"))
 
     def exists(self) -> bool:
         """Check if the repository exists in the working directory.
@@ -232,9 +233,13 @@ class Repository:
             case SymRef() as ref:
                 if ref.upper() == 'HEAD':
                     return self.resolve_ref(self.head_ref())
+                try:
+                    resolved = read_ref(self.refs_dir() / ref)
+                    return self.resolve_ref(resolved)
+                except FileNotFoundError:
+                    # The branch is "unborn" (or missing), so it points to nothing yet!
+                    return None
 
-                ref = read_ref(self.refs_dir() / ref)
-                return self.resolve_ref(ref)
             case str():
                 # Try to figure out what kind of ref it is by looking at the list of refs
                 # in the refs directory
@@ -286,20 +291,29 @@ class Repository:
 
     @requires_repo
     def add_branch(self, branch: str) -> None:
-        """Add a new branch to the repository, initialized to be an empty reference.
+        """Add a new branch to the repository, pointing to the current HEAD commit.
 
         :param branch: The name of the branch to add.
         :raises ValueError: If the branch name is empty.
-        :raises RepositoryError: If the branch already exists.
+        :raises RepositoryError: If the branch already exists or the repo has no commits.
         :raises RepositoryNotFoundError: If the repository does not exist."""
         if not branch:
             msg = 'Branch name is required'
             raise ValueError(msg)
+            
         if self.branch_exists(SymRef(branch)):
             msg = f'Branch "{branch}" already exists'
             raise RepositoryError(msg)
 
-        (self.heads_dir() / branch).touch()
+        current_hash = self.head_commit()
+        if current_hash is None:
+            # Prevent creating a branch in an empty repo
+            raise RepositoryError(
+                f"Cannot create branch '{branch}'. "
+                "You must make your first commit before creating additional branches."
+            )
+
+        write_ref(self.heads_dir() / branch, HashRef(current_hash))
 
     @requires_repo
     def delete_branch(self, branch: str) -> None:
@@ -448,7 +462,14 @@ class Repository:
         save_commit(self.objects_dir(), commit)
 
         if branch:
-            self.update_ref(branch, commit_ref)
+            ref_path = self.refs_dir() / branch
+            if not ref_path.exists():
+                # This is the very first commit on an unborn branch!
+                # We bypass update_ref (which expects it to exist) and create it directly.
+                write_ref(ref_path, commit_ref)
+            else:
+                # Standard commit on an existing branch
+                self.update_ref(branch, commit_ref)
 
         # clean up merge state
         if merge_head_file.exists():
@@ -829,29 +850,23 @@ class Repository:
         is_branch = False
         full_branch_ref = None
 
+        # Check if the target is an existing branch
         if isinstance(safe_ref, SymRef):
             short_name = safe_ref.branch_name()
-            # Check branch_exists using the short name
             if self.branch_exists(SymRef(short_name)):
                 is_branch = True
-                # Lock in the fully qualified path
                 full_branch_ref = SymRef(f"heads/{short_name}")
                 safe_ref = full_branch_ref
 
         target_hash = self.resolve_ref(safe_ref)
         
         if target_hash is None:
-            # The Empty Branch Rescue
-            if is_branch:
-                self.update_head(full_branch_ref)
-                return  # Skip syncing
-            else:
-                raise RefError(f'Cannot resolve reference {target_ref}')
+            raise RefError(f"Cannot resolve reference: '{target_ref}'")
 
         self.sync_working_dir_to_commit(target_hash)
         
         # Update HEAD (Attach vs. Detach)
-        if is_branch:
+        if is_branch and full_branch_ref:
             # It's a branch: Attach HEAD
             self.update_head(full_branch_ref)
         else:

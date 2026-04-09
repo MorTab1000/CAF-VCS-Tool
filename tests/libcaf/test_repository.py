@@ -178,6 +178,12 @@ def test_add_branch_already_exists_raises_error(temp_repo: Repository) -> None:
         temp_repo.add_branch(DEFAULT_BRANCH)
 
 
+def test_add_branch_empty_repo_raises_error(temp_repo: Repository) -> None:
+    """Ensure adding a branch to a repository with no commits raises an error."""
+    with raises(RepositoryError, match="You must make your first commit"):
+        temp_repo.add_branch('feature')
+
+
 def test_save_dir_invalid_path_raises_error(temp_repo: Repository) -> None:
     with raises(NotADirectoryError):
         temp_repo.save_dir(None)

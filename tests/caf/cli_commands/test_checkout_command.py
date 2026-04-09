@@ -31,15 +31,6 @@ def test_checkout_short_branch_name_attaches_head(temp_repo: Repository) -> None
     assert head_content == 'ref: heads/main'
 
 
-def test_checkout_empty_branch_in_new_repo(temp_repo: Repository) -> None:
-    temp_repo.add_branch('empty-feature')
-    temp_repo.checkout('empty-feature')
-    
-    head_file = temp_repo.working_dir / temp_repo.repo_dir / 'HEAD'
-    head_content = head_file.read_text().strip()
-    assert head_content == 'ref: heads/empty-feature'
-
-
 def test_cli_checkout_create_branch_flag(temp_repo: Repository) -> None:
     (temp_repo.working_dir / 'file.txt').write_text('base\n')
     temp_repo.commit_working_dir('QA', 'base')
