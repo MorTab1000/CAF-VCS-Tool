@@ -184,6 +184,17 @@ def test_add_branch_empty_repo_raises_error(temp_repo: Repository) -> None:
         temp_repo.add_branch('feature')
 
 
+def test_add_branch_inherits_head_history(temp_repo: Repository) -> None:
+    """Ensure that a newly created branch points to the exact same commit as HEAD."""
+    (temp_repo.working_dir / 'file.txt').write_text('base\n')
+    base_hash = temp_repo.commit_working_dir('QA', 'base')
+
+    temp_repo.add_branch('feature')
+
+    feature_hash = temp_repo.resolve_ref(SymRef('heads/feature'))
+    assert feature_hash == base_hash, "New branch did not inherit the HEAD commit hash!"
+
+
 def test_save_dir_invalid_path_raises_error(temp_repo: Repository) -> None:
     with raises(NotADirectoryError):
         temp_repo.save_dir(None)
