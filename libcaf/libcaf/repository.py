@@ -122,9 +122,6 @@ class Repository:
         heads_dir = self.heads_dir()
         heads_dir.mkdir(parents=True)
 
-        # self.add_branch(default_branch)
-
-        # write_ref(self.head_file(), branch_ref(default_branch))
         write_ref(self.head_file(), SymRef(f"heads/{default_branch}"))
 
     def exists(self) -> bool:
