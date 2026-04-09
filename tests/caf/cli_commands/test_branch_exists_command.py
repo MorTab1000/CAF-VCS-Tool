@@ -7,6 +7,7 @@ from caf import cli_commands
 
 
 def test_branch_exists_command(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    temp_repo.commit_working_dir('Test Author', 'Initial commit')
     assert cli_commands.add_branch(working_dir_path=temp_repo.working_dir, branch_name='feature') == 0
     assert cli_commands.branch_exists(working_dir_path=temp_repo.working_dir, branch_name='feature') == 0
 

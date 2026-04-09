@@ -16,7 +16,7 @@ from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
                         OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE)
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree, hash_file, restore_blob_to_path
-from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref
+from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref, coerce_to_ref
 from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, compute_merge_tree, is_binary_blob, three_way_merge
 from libcaf.sequences import prepare_lines_sequence
 from enum import Enum, auto
@@ -122,9 +122,7 @@ class Repository:
         heads_dir = self.heads_dir()
         heads_dir.mkdir(parents=True)
 
-        self.add_branch(default_branch)
-
-        write_ref(self.head_file(), branch_ref(default_branch))
+        write_ref(self.head_file(), SymRef(f"heads/{default_branch}"))
 
     def exists(self) -> bool:
         """Check if the repository exists in the working directory.
@@ -229,12 +227,16 @@ class Repository:
         match ref:
             case HashRef():
                 return ref
-            case SymRef(ref):
+            case SymRef() as ref:
                 if ref.upper() == 'HEAD':
                     return self.resolve_ref(self.head_ref())
+                try:
+                    resolved = read_ref(self.refs_dir() / ref)
+                    return self.resolve_ref(resolved)
+                except FileNotFoundError:
+                    # The branch is "unborn" (or missing), so it points to nothing yet!
+                    return None
 
-                ref = read_ref(self.refs_dir() / ref)
-                return self.resolve_ref(ref)
             case str():
                 # Try to figure out what kind of ref it is by looking at the list of refs
                 # in the refs directory
@@ -286,20 +288,29 @@ class Repository:
 
     @requires_repo
     def add_branch(self, branch: str) -> None:
-        """Add a new branch to the repository, initialized to be an empty reference.
+        """Add a new branch to the repository, pointing to the current HEAD commit.
 
         :param branch: The name of the branch to add.
         :raises ValueError: If the branch name is empty.
-        :raises RepositoryError: If the branch already exists.
+        :raises RepositoryError: If the branch already exists or the repo has no commits.
         :raises RepositoryNotFoundError: If the repository does not exist."""
         if not branch:
             msg = 'Branch name is required'
             raise ValueError(msg)
+            
         if self.branch_exists(SymRef(branch)):
             msg = f'Branch "{branch}" already exists'
             raise RepositoryError(msg)
 
-        (self.heads_dir() / branch).touch()
+        current_hash = self.head_commit()
+        if current_hash is None:
+            # Prevent creating a branch in an empty repo
+            raise RepositoryError(
+                f"Cannot create branch '{branch}'. "
+                "You must make your first commit before creating additional branches."
+            )
+
+        write_ref(self.heads_dir() / branch, HashRef(current_hash))
 
     @requires_repo
     def delete_branch(self, branch: str) -> None:
@@ -448,7 +459,14 @@ class Repository:
         save_commit(self.objects_dir(), commit)
 
         if branch:
-            self.update_ref(branch, commit_ref)
+            ref_path = self.refs_dir() / branch
+            if not ref_path.exists():
+                # This is the very first commit on an unborn branch!
+                # We bypass update_ref (which expects it to exist) and create it directly.
+                write_ref(ref_path, commit_ref)
+            else:
+                # Standard commit on an existing branch
+                self.update_ref(branch, commit_ref)
 
         # clean up merge state
         if merge_head_file.exists():
@@ -820,21 +838,38 @@ class Repository:
         self._apply_pass3_writes(flattened_diffs, target_blob_map)
 
     @requires_repo
-    def checkout(self, target_ref: Ref) -> None:
-        """Checkout a target reference into the working directory and update HEAD to that commit."""
-        target_hash = self.resolve_ref(target_ref)
+    def checkout(self, target_ref: Ref | str) -> None:
+        """Checkout a target reference into the working directory and update HEAD."""
+        
+        # Normalize the incoming reference
+        safe_ref = coerce_to_ref(target_ref)
+
+        is_branch = False
+        full_branch_ref = None
+
+        # Check if the target is an existing branch
+        if isinstance(safe_ref, SymRef):
+            if '/' not in safe_ref or safe_ref.startswith('heads/'):
+                short_name = safe_ref.branch_name()                
+                if self.branch_exists(SymRef(short_name)):
+                    is_branch = True
+                    full_branch_ref = SymRef(f"heads/{short_name}")
+                    safe_ref = full_branch_ref
+
+        target_hash = self.resolve_ref(safe_ref)
+        
         if target_hash is None:
-            raise RefError(f'Cannot resolve reference {target_ref}')
-        safe_ref = target_ref
-        if type(target_ref) is str:  # Exact type match to avoid trapping existing HashRef/SymRef
-            if len(target_ref) == HASH_LENGTH and all(c in HASH_CHARSET for c in target_ref):
-                safe_ref = HashRef(target_ref)
-            else:
-                # Assuming if it's not a hash, it's meant to be a symbolic branch reference
-                safe_ref = SymRef(target_ref)
+            raise RefError(f"Cannot resolve reference: '{target_ref}'")
 
         self.sync_working_dir_to_commit(target_hash)
-        self.update_head(safe_ref)
+        
+        # Update HEAD (Attach vs. Detach)
+        if is_branch and full_branch_ref:
+            # It's a branch: Attach HEAD
+            self.update_head(full_branch_ref)
+        else:
+            # It's a tag or a raw commit hash: Detach HEAD
+            self.update_head(HashRef(target_hash))
     
     @requires_repo
     def tags_dir(self) -> Path:

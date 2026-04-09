@@ -212,6 +212,25 @@ def cli() -> None:
                 },
             },
             'help': '🔀 Merge a branch or commit into the current active branch',
+        },
+
+        'checkout': {
+            'func': cli_commands.checkout,
+            'args': {
+                **_repo_args,
+                'target_ref': {
+                    'type': str,
+                    'help': '🔀 The branch, tag, or commit hash to checkout into the working directory'
+                },
+                'branch': {
+                    'type': None,
+                    'help': '🆕 Create a new branch and switch to it',
+                    'default': False,
+                    'flag': True,
+                    'short_flag': 'b',  # Allows both -b and --branch
+                },
+            },
+            'help': '🔀 Checkout a branch or commit into the working directory',
         }
     }
 
