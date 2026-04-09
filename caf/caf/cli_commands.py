@@ -465,9 +465,13 @@ def checkout(**kwargs) -> int:
             _print_success(f"Created branch '{target}'")
             checkout_target = target
         else:
-            if repo.branch_exists(target) or repo.branch_exists(f"heads/{target}"):
+            if repo.branch_exists(target):
+                checkout_target = target
+            elif repo.branch_exists(f"heads/{target}"):
                 checkout_target = f"heads/{target}"
-            elif repo.tag_exists(target) or repo.tag_exists(f"tags/{target}"):
+            elif repo.tag_exists(target):
+                checkout_target = target
+            elif repo.tag_exists(f"tags/{target}"):
                 checkout_target = f"tags/{target}"
             else:
                 # Fallback: Let repo.checkout attempt to resolve it as a raw hash
@@ -482,8 +486,8 @@ def checkout(**kwargs) -> int:
         _print_error(f"Please ensure '{target}' is a valid branch, tag, or commit hash.")
         return -1
     except RepositoryNotFoundError as e:
-        _print_error(f"❌ Error: Not a valid CAF repository ({e})")
+        _print_error(f" Not a valid CAF repository ({e})")
         return -1
     except RepositoryError as e:
-        _print_error(f"❌ Error: {e}")
+        _print_error(f" {e}")
         return -1
