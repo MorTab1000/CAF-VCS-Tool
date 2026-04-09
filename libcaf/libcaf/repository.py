@@ -830,23 +830,13 @@ class Repository:
         full_branch_ref = None
 
         if isinstance(safe_ref, SymRef):
-            # Extract the raw string from the SymRef object
-            raw_str = ""
-            match safe_ref:
-                case SymRef(v): raw_str = v
-                case _: raw_str = str(safe_ref)
-
-            # Strip the prefix to get the pure short name (e.g., 'heads/main' -> 'main')
-            short_name = raw_str
-            if short_name.startswith('heads/'):
-                short_name = short_name[6:]
-
-            # Check branch_exists using the short name!
+            short_name = safe_ref.branch_name()
+            # Check branch_exists using the short name
             if self.branch_exists(SymRef(short_name)):
                 is_branch = True
-                # Lock in the fully qualified path for resolving and attaching
+                # Lock in the fully qualified path
                 full_branch_ref = SymRef(f"heads/{short_name}")
-                safe_ref = full_branch_ref  
+                safe_ref = full_branch_ref
 
         target_hash = self.resolve_ref(safe_ref)
         
