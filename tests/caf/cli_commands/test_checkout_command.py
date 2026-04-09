@@ -1,7 +1,6 @@
 from libcaf.ref import SymRef
 from libcaf.repository import Repository
-from caf.cli import cli_commands
-
+from caf import cli_commands
 
 def test_checkout_short_branch_name_attaches_head(temp_repo: Repository) -> None:
     (temp_repo.working_dir / 'file.txt').write_text('base\n')
