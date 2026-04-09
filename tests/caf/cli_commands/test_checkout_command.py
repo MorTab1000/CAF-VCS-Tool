@@ -4,28 +4,22 @@ from caf.cli import cli_commands
 
 
 def test_checkout_short_branch_name_attaches_head(temp_repo: Repository) -> None:
-    # 1. Setup base commit on main
     (temp_repo.working_dir / 'file.txt').write_text('base\n')
     temp_repo.commit_working_dir('QA', 'base')
     
-    # 2. Create and checkout feature branch
     temp_repo.add_branch('feature')
     temp_repo.checkout('feature')
     
-    # FIX 1: Read the absolute path inside the temporary working directory
     head_file = temp_repo.working_dir / temp_repo.repo_dir / 'HEAD'
     head_content = head_file.read_text().strip()
     
-    # FIX 2: Match libcaf's specific format
     assert head_content == 'ref: heads/feature'
     
-    # 3. Make a commit on feature, then checkout main (short name)
     (temp_repo.working_dir / 'file.txt').write_text('feature\n')
     temp_repo.commit_working_dir('QA', 'feature change')
     
     temp_repo.checkout('main')
     
-    # 4. Verify workspace synced and HEAD attached to main
     assert (temp_repo.working_dir / 'file.txt').read_text() == 'base\n'
     head_content = head_file.read_text().strip()
     assert head_content == 'ref: heads/main'
