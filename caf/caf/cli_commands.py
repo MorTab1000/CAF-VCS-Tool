@@ -403,7 +403,7 @@ def merge(**kwargs) -> int:
                 if isinstance(current_head, SymRef):
                     repo.update_ref(current_head, target_hash)
                 else:
-                    # Detached HEAD fix: advance the HEAD pointer directly
+                    # Detached HEAD: advance the HEAD pointer directly
                     repo.update_head(HashRef(target_hash))
                 _print_success(f'Merge completed with a fast-forward. Current branch now points to {target_ref}.')
                 return 0            
@@ -450,8 +450,7 @@ def merge(**kwargs) -> int:
 
 
 def checkout(**kwargs) -> int:
-    repo = _repo_from_cli_kwargs(kwargs)
-    target = kwargs.get('target_ref') 
+    target = kwargs.get('target_ref')
     create_branch = kwargs.get('branch')
 
     if not target:
@@ -459,15 +458,22 @@ def checkout(**kwargs) -> int:
         return -1
 
     try:
-        if create_branch:
-            try:
-                repo.add_branch(target)
-                _print_success(f"Created branch '{target}'")
-            except RepositoryError as e:
-                _print_error(f"{e}")
-                return -1
+        repo = _repo_from_cli_kwargs(kwargs)
 
-        repo.checkout(target)
+        if create_branch:
+            repo.add_branch(target)
+            _print_success(f"Created branch '{target}'")
+            checkout_target = target
+        else:
+            if repo.branch_exists(target) or repo.branch_exists(f"heads/{target}"):
+                checkout_target = f"heads/{target}"
+            elif repo.tag_exists(target) or repo.tag_exists(f"tags/{target}"):
+                checkout_target = f"tags/{target}"
+            else:
+                # Fallback: Let repo.checkout attempt to resolve it as a raw hash
+                checkout_target = target
+
+        repo.checkout(checkout_target)
         _print_success(f"Switched to '{target}'")
         return 0
 
@@ -475,6 +481,9 @@ def checkout(**kwargs) -> int:
         _print_error(f"{e}")
         _print_error(f"Please ensure '{target}' is a valid branch, tag, or commit hash.")
         return -1
-    except Exception as e:
-        _print_error(f"Error during checkout: {e}")
+    except RepositoryNotFoundError as e:
+        _print_error(f"❌ Error: Not a valid CAF repository ({e})")
+        return -1
+    except RepositoryError as e:
+        _print_error(f"❌ Error: {e}")
         return -1
