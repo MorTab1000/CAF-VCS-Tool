@@ -228,7 +228,7 @@ def cli() -> None:
                     'default': False,
                     'flag': True,
                     'short_flag': 'b',  # Allows both -b and --branch
-                },,
+                },
             },
             'help': '🔀 Checkout a branch or commit into the working directory',
         }

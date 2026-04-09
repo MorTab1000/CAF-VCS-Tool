@@ -471,8 +471,9 @@ def checkout(**kwargs) -> int:
         _print_success(f"Switched to '{target}'")
         return 0
 
-    except RefError:
-        _print_error(f"Cannot resolve '{target}'. Does the branch exist?")
+    except RefError as e:
+        _print_error(f"{e}")
+        _print_error(f"Please ensure '{target}' is a valid branch, tag, or commit hash.")
         return -1
     except Exception as e:
         _print_error(f"Error during checkout: {e}")
