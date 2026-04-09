@@ -849,11 +849,12 @@ class Repository:
 
         # Check if the target is an existing branch
         if isinstance(safe_ref, SymRef):
-            short_name = safe_ref.branch_name()
-            if self.branch_exists(SymRef(short_name)):
-                is_branch = True
-                full_branch_ref = SymRef(f"heads/{short_name}")
-                safe_ref = full_branch_ref
+            if '/' not in safe_ref or safe_ref.startswith('heads/'):
+                short_name = safe_ref.branch_name()                
+                if self.branch_exists(SymRef(short_name)):
+                    is_branch = True
+                    full_branch_ref = SymRef(f"heads/{short_name}")
+                    safe_ref = full_branch_ref
 
         target_hash = self.resolve_ref(safe_ref)
         
