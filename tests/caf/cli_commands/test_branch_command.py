@@ -43,11 +43,14 @@ def test_branch_no_branches(temp_repo: Repository, capsys: CaptureFixture[str]) 
 
 
 def test_branch_repo_error(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
-    temp_repo.commit_working_dir('Test Author', 'Initial commit')
+        temp_repo.commit_working_dir('Test Author', 'Initial commit')
+        (temp_repo.working_dir / DEFAULT_REPO_DIR / 'HEAD').unlink()
+
+        assert cli_commands.branch(working_dir_path=temp_repo.working_dir) == -1
+        stderr = capsys.readouterr().err
         
-    (temp_repo.working_dir / DEFAULT_REPO_DIR / HEAD_FILE).unlink()
-    
-    assert cli_commands.branch(working_dir_path=temp_repo.working_dir) == -1
+        assert "Error" in stderr
+        assert "HEAD" in stderr  # Ensures it's complaining about the specific corruption
 
 
 def test_branch_shows_current_branch_with_asterisk(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
