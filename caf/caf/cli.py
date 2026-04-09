@@ -223,12 +223,12 @@ def cli() -> None:
                     'help': '🔀 The branch, tag, or commit hash to checkout into the working directory'
                 },
                 'branch': {
-                    'type': str,
+                    'type': None,
                     'help': '🆕 Create a new branch and switch to it',
                     'default': False,
                     'flag': True,
                     'short_flag': 'b',  # Allows both -b and --branch
-                },
+                },,
             },
             'help': '🔀 Checkout a branch or commit into the working directory',
         }
