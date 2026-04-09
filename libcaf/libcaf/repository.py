@@ -229,7 +229,7 @@ class Repository:
         match ref:
             case HashRef():
                 return ref
-            case SymRef(ref):
+            case SymRef() as ref:
                 if ref.upper() == 'HEAD':
                     return self.resolve_ref(self.head_ref())
 
