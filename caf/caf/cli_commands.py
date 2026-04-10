@@ -353,7 +353,7 @@ def status(**kwargs) -> int:
         else:
             _print_success(f'On branch {branch_state}')
         
-        if repo.head_commit() is None:
+        if status_report['is_unborn']:
             _print_success('\nNo commits yet\n')
 
         added = status_report['added']

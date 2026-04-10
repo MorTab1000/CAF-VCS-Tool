@@ -427,6 +427,7 @@ class Repository:
             'added': added,
             'modified': modified,
             'deleted': deleted,
+            'is_unborn': head_commit_hash is None
         }
 
     @requires_repo
