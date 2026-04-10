@@ -5,7 +5,7 @@ from collections.abc import MutableSequence, Sequence
 from datetime import datetime
 from pathlib import Path
 
-from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH
+from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH, SHORT_HASH_LENGTH
 from libcaf.plumbing import hash_file as plumbing_hash_file
 from libcaf.ref import SymRef, HashRef, RefError
 from libcaf.repository import (AddedDiff, Diff, ModifiedDiff, MovedToDiff, RemovedDiff, Repository, RepositoryError,
@@ -263,11 +263,11 @@ def log(**kwargs) -> int:
                 _print_success('Commit history:\n')
                 has_commits = True
             commit = item.commit
-            short_hash = item.commit_ref[:7]
+            short_hash = item.commit_ref[:SHORT_HASH_LENGTH]
 
             print(f'Commit: {short_hash}')
             if len(commit.parents) > 1:
-                short_parents = ' '.join(parent[:7] for parent in commit.parents)
+                short_parents = ' '.join(parent[:SHORT_HASH_LENGTH] for parent in commit.parents)
                 print(f'Merge: {short_parents}')
             print(f'Author: {commit.author}')
             commit_date = datetime.fromtimestamp(commit.timestamp).strftime('%Y-%m-%d %H:%M:%S')

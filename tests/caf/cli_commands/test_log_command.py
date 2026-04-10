@@ -2,7 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from libcaf import Commit
-from libcaf.constants import DEFAULT_REPO_DIR, HEAD_FILE
+from libcaf.constants import DEFAULT_REPO_DIR, HEAD_FILE, SHORT_HASH_LENGTH
 from libcaf.plumbing import hash_object, load_commit, save_commit
 from libcaf.ref import HashRef
 from libcaf.repository import Repository
@@ -28,8 +28,8 @@ def test_log_command(temp_repo: Repository, parse_commit_hash: Callable[[], str]
     assert cli_commands.log(working_dir_path=working_dir) == 0
 
     output: str = capsys.readouterr().out
-    assert commit_hash1[:7] in output
-    assert commit_hash2[:7] in output
+    assert commit_hash1[:SHORT_HASH_LENGTH] in output
+    assert commit_hash2[:SHORT_HASH_LENGTH] in output
     assert 'Log Tester' in output
     assert 'First commit' in output
     assert 'Second commit' in output
@@ -80,5 +80,5 @@ def test_log_prints_merge_indicator_with_short_parent_hashes(temp_repo: Reposito
     assert cli_commands.log(working_dir_path=working_dir) == 0
 
     output = capsys.readouterr().out
-    assert f'Commit: {merge_ref[:7]}' in output
-    assert f'Merge: {left_ref[:7]} {right_ref[:7]}' in output
+    assert f'Commit: {merge_ref[:SHORT_HASH_LENGTH]}' in output
+    assert f'Merge: {left_ref[:SHORT_HASH_LENGTH]} {right_ref[:SHORT_HASH_LENGTH]}' in output
