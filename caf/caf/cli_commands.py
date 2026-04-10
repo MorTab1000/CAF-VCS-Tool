@@ -364,7 +364,7 @@ def status(**kwargs) -> int:
             _print_success('nothing to commit, working tree clean')
             return 0
 
-        _print_success('\nChanges to be committed:')
+        _print_success('\nUncommitted changes in working directory:')
 
         for path in added:
             _print_success(f'  new file: {path}')

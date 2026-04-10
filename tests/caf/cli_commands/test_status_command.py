@@ -49,7 +49,7 @@ def test_status_reports_added_modified_and_deleted_files(temp_repo: Repository,
     assert cli_commands.status(working_dir_path=temp_repo.working_dir) == 0
 
     output = capsys.readouterr().out
-    assert 'Changes to be committed:' in output
+    assert 'Uncommitted changes in working directory:' in output
     assert 'new file: added.txt' in output
     assert 'modified: to_modify.txt' in output
     assert 'deleted: to_delete.txt' in output
