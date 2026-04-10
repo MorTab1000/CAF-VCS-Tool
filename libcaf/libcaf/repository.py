@@ -248,14 +248,21 @@ class Repository:
                     return None
 
             case str():
-                if ref.upper() == 'HEAD' or ref in self.refs():
+                if ref.upper() == 'HEAD':
+                    return self.resolve_ref(SymRef('HEAD'))
+                
+                if ref in self.refs():
                     return self.resolve_ref(SymRef(ref))
-                if len(ref) == HASH_LENGTH and all(c in HASH_CHARSET for c in ref):
-                    return HashRef(ref)
-                if MIN_HASH_LENGTH <= len(ref) < HASH_LENGTH and all(c in HASH_CHARSET for c in ref):
+                
+                hex_ref = ref.lower()
+
+                if len(hex_ref) == HASH_LENGTH and all(c in HASH_CHARSET for c in hex_ref):
+                    return HashRef(hex_ref
+                                   )
+                if MIN_HASH_LENGTH <= len(hex_ref) < HASH_LENGTH and all(c in HASH_CHARSET for c in hex_ref):
                     candidates: list[HashRef] = []
                     
-                    prefix_dir = self.objects_dir() / ref[:2]
+                    prefix_dir = self.objects_dir() / hex_ref[:2]
                     
                     if prefix_dir.is_dir():
                         for obj_file in prefix_dir.iterdir():
@@ -263,7 +270,7 @@ class Repository:
                                 continue
                                 
                             candidate = obj_file.name
-                            if len(candidate) == HASH_LENGTH and candidate.startswith(ref):
+                            if len(candidate) == HASH_LENGTH and candidate.startswith(hex_ref):
                                 candidates.append(HashRef(candidate))
 
                     if len(candidates) == 1:
