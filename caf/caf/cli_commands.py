@@ -5,7 +5,7 @@ from collections.abc import MutableSequence, Sequence
 from datetime import datetime
 from pathlib import Path
 
-from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH, SHORT_HASH_LENGTH, MIN_HASH_LENGTH
+from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH, SHORT_HASH_LENGTH, MIN_HASH_LENGTH, HASH_CHARSET
 from libcaf.plumbing import hash_file as plumbing_hash_file
 from libcaf.ref import SymRef, HashRef, RefError
 from libcaf.repository import (AddedDiff, AmbiguousRefError, Diff, ModifiedDiff, MovedToDiff, RemovedDiff, Repository, RepositoryError,
@@ -386,7 +386,7 @@ def merge(**kwargs) -> int:
         return -1
         
     try:
-        is_hash = len(raw_target) == HASH_LENGTH and all(c in '0123456789abcdef' for c in raw_target.lower())
+        is_hash = len(raw_target) == HASH_LENGTH and all(c in HASH_CHARSET for c in raw_target.lower())
         
         target_ref = None
         target_hash = None
@@ -515,7 +515,7 @@ def checkout(**kwargs) -> int:
                 checkout_target = f"tags/{target}"
             else:
                 # Fallback: pre-resolve short hashes so ambiguity errors can be surfaced cleanly.
-                is_short_hash = MIN_HASH_LENGTH <= len(target) < HASH_LENGTH and all(c in '0123456789abcdef' for c in target.lower())
+                is_short_hash = MIN_HASH_LENGTH <= len(target) < HASH_LENGTH and all(c in HASH_CHARSET for c in target.lower())
                 if is_short_hash:
                     resolved_target = repo.resolve_ref(target)
                     checkout_target = resolved_target if resolved_target is not None else target
