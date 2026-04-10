@@ -295,7 +295,10 @@ def log(**kwargs) -> int:
         _print_ambiguous_short_hash_error(str(target), e.candidates)
         return -1
     except RepositoryError as re:
-        _print_error(f'Repository error: {re}')
+        _print_error(f'Repository error, {re}')
+        return -1
+    except RefError as e:
+        _print_error(f"{e}")
         return -1
 
 
@@ -331,9 +334,11 @@ def diff(**kwargs) -> int:
         _print_ambiguous_short_hash_error(ambiguous_source, e.candidates)
         return -1
     except RepositoryError as e:
-        _print_error(f'Repository error: {e}')
+        _print_error(f'Repository error, {e}')
         return -1
-
+    except RefError as e:
+        _print_error(f"{e}")
+        return -1
 
 def _repo_from_cli_kwargs(kwargs: dict[str, str]) -> Repository:
     working_dir_path = kwargs.get('working_dir_path', '.')
