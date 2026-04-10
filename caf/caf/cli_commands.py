@@ -461,6 +461,13 @@ def checkout(**kwargs) -> int:
         repo = _repo_from_cli_kwargs(kwargs)
 
         if create_branch:
+            if repo.head_commit() is None:
+                # Unborn branch case: Only update HEAD to point to the new branch, no need to create a branch ref since there are no commits yet
+                repo.update_head(SymRef(f"heads/{target}"))
+                _print_success(f"Switched to a new branch '{target}'")
+                return 0
+            
+            # Standard branch creation for a repo with history
             repo.add_branch(target)
             _print_success(f"Created branch '{target}'")
             checkout_target = target

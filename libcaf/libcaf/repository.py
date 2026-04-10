@@ -462,7 +462,6 @@ class Repository:
             ref_path = self.refs_dir() / branch
             if not ref_path.exists():
                 # This is the very first commit on an unborn branch!
-                # We bypass update_ref (which expects it to exist) and create it directly.
                 write_ref(ref_path, commit_ref)
             else:
                 # Standard commit on an existing branch
