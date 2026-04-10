@@ -133,6 +133,11 @@ def cli() -> None:
             'func': cli_commands.log,
             'args': {
                 **_repo_args,
+                'target': {
+                    'type': str,
+                    'help': '🔎 Optional starting commit/branch/tag/hash for log traversal',
+                    'nargs': '?',
+                },
             },
             'help': '📜 Show commit log',
         },
