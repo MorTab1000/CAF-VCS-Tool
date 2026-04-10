@@ -5,7 +5,7 @@ from libcaf import Commit
 from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH
 from libcaf.plumbing import hash_object, load_commit, load_tree, save_commit
 from libcaf.ref import RefError, SymRef
-from libcaf.repository import HashRef, Repository, RepositoryError, branch_ref
+from libcaf.repository import AmbiguousRefError, HashRef, Repository, RepositoryError, branch_ref
 from pytest import raises
 
 
@@ -167,8 +167,31 @@ def test_resolve_ref_invalid_string_raises_error(temp_repo: Repository) -> None:
     with raises(RefError):
         temp_repo.resolve_ref('g' * HASH_LENGTH)  # 'g' is not a valid hex character
 
-    with raises(RefError):
-        temp_repo.resolve_ref('abc123')
+    assert temp_repo.resolve_ref('abc123') is None
+
+
+def test_resolve_ref_short_hash_unique_match_returns_hash(temp_repo: Repository) -> None:
+    commit_hash = HashRef('abcd1234567890abcdef1234567890abcdef1234')
+    commit_path = temp_repo.objects_dir() / commit_hash[:2] / commit_hash
+    commit_path.parent.mkdir(parents=True, exist_ok=True)
+    commit_path.write_text('dummy')
+
+    assert temp_repo.resolve_ref('abcd1234') == commit_hash
+
+
+def test_resolve_ref_short_hash_ambiguous_raises_error(temp_repo: Repository) -> None:
+    commit_hash_1 = HashRef('abcd1234567890abcdef1234567890abcdef1234')
+    commit_hash_2 = HashRef('abcd9999567890abcdef1234567890abcdef1234')
+
+    for commit_hash in [commit_hash_1, commit_hash_2]:
+        commit_path = temp_repo.objects_dir() / commit_hash[:2] / commit_hash
+        commit_path.parent.mkdir(parents=True, exist_ok=True)
+        commit_path.write_text('dummy')
+
+    with raises(AmbiguousRefError) as exc_info:
+        temp_repo.resolve_ref('abcd')
+
+    assert set(exc_info.value.candidates) == {commit_hash_1, commit_hash_2}
 
 
 def test_resolve_ref_invalid_type_raises_error(temp_repo: Repository) -> None:
