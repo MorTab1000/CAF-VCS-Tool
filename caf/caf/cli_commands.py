@@ -340,6 +340,48 @@ def diff(**kwargs) -> int:
         _print_error(f"{e}")
         return -1
 
+
+def status(**kwargs) -> int:
+    repo = _repo_from_cli_kwargs(kwargs)
+
+    try:
+        status_report = repo.get_status()
+
+        branch_state = status_report['branch']
+        if isinstance(branch_state, str) and branch_state.startswith('detached at '):
+            _print_success(f'HEAD {branch_state}')
+        else:
+            _print_success(f'On branch {branch_state}')
+        
+        if repo.head_commit() is None:
+            _print_success('\nNo commits yet\n')
+
+        added = status_report['added']
+        modified = status_report['modified']
+        deleted = status_report['deleted']
+
+        if not added and not modified and not deleted:
+            _print_success('nothing to commit, working tree clean')
+            return 0
+
+        _print_success('\nChanges to be committed:')
+
+        for path in added:
+            _print_success(f'  new file: {path}')
+        for path in modified:
+            _print_success(f'  modified: {path}')
+        for path in deleted:
+            _print_success(f'  deleted: {path}')
+
+        return 0
+    except RepositoryNotFoundError:
+        _print_error(f'No repository found at {repo.repo_path()}')
+        return -1
+    except RepositoryError as e:
+        _print_error(f'Repository error: {e}')
+        return -1
+
+
 def _repo_from_cli_kwargs(kwargs: dict[str, str]) -> Repository:
     working_dir_path = kwargs.get('working_dir_path', '.')
     repo_dir = kwargs.get('repo_dir')
