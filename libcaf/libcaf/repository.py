@@ -16,7 +16,7 @@ from functools import wraps
 from typing import Concatenate, Optional, Tuple
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
-                        OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE)
+                        OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE, MIN_HASH_LENGTH)
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree, hash_file, restore_blob_to_path
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref, coerce_to_ref
 from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, compute_merge_tree, is_binary_blob, three_way_merge
@@ -254,7 +254,7 @@ class Repository:
                     return self.resolve_ref(SymRef(ref))
                 if len(ref) == HASH_LENGTH and all(c in HASH_CHARSET for c in ref):
                     return HashRef(ref)
-                if 4 <= len(ref) < HASH_LENGTH and all(c in HASH_CHARSET for c in ref):
+                if MIN_HASH_LENGTH <= len(ref) < HASH_LENGTH and all(c in HASH_CHARSET for c in ref):
                     candidates: list[HashRef] = []
 
                     for obj_file in self.objects_dir().rglob('*'):

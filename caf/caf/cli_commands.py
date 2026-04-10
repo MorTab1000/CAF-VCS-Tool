@@ -5,7 +5,7 @@ from collections.abc import MutableSequence, Sequence
 from datetime import datetime
 from pathlib import Path
 
-from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH, SHORT_HASH_LENGTH
+from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH, SHORT_HASH_LENGTH, MIN_HASH_LENGTH
 from libcaf.plumbing import hash_file as plumbing_hash_file
 from libcaf.ref import SymRef, HashRef, RefError
 from libcaf.repository import (AddedDiff, AmbiguousRefError, Diff, ModifiedDiff, MovedToDiff, RemovedDiff, Repository, RepositoryError,
@@ -321,6 +321,15 @@ def diff(**kwargs) -> int:
     except RepositoryNotFoundError:
         _print_error(f'No repository found at {repo.repo_path()}')
         return -1
+    except AmbiguousRefError as e:
+        ambiguous_source = 'commit1 or commit2'
+        if all(candidate.startswith(commit1) for candidate in e.candidates):
+            ambiguous_source = commit1
+        elif all(candidate.startswith(commit2) for candidate in e.candidates):
+            ambiguous_source = commit2
+
+        _print_ambiguous_short_hash_error(ambiguous_source, e.candidates)
+        return -1
     except RepositoryError as e:
         _print_error(f'Repository error: {e}')
         return -1
@@ -505,8 +514,13 @@ def checkout(**kwargs) -> int:
             elif repo.tag_exists(f"tags/{target}"):
                 checkout_target = f"tags/{target}"
             else:
-                # Fallback: Let repo.checkout attempt to resolve it as a raw hash
-                checkout_target = target
+                # Fallback: pre-resolve short hashes so ambiguity errors can be surfaced cleanly.
+                is_short_hash = MIN_HASH_LENGTH <= len(target) < HASH_LENGTH and all(c in '0123456789abcdef' for c in target.lower())
+                if is_short_hash:
+                    resolved_target = repo.resolve_ref(target)
+                    checkout_target = resolved_target if resolved_target is not None else target
+                else:
+                    checkout_target = target
 
         repo.checkout(checkout_target)
         _print_success(f"Switched to '{target}'")
