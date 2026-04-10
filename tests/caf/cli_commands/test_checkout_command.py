@@ -1,5 +1,5 @@
 from libcaf.ref import SymRef
-from libcaf.repository import Repository
+from libcaf.repository import AmbiguousRefError, Repository
 from caf import cli_commands
 from pytest import CaptureFixture
 
@@ -84,3 +84,27 @@ def test_integration_checkout_unborn_then_commit(temp_repo: Repository) -> None:
     feature_branch_file = temp_repo.working_dir / temp_repo.repo_path() / 'refs' / 'heads' / 'feature'
     assert feature_branch_file.exists(), "The commit command failed to birth the unborn branch!"
     assert feature_branch_file.read_text().strip() == commit_hash
+
+
+def test_checkout_ambiguous_short_hash_prints_git_style_error(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    short_hash = 'abcd'
+    candidate_1 = 'abcd1234567890abcdef1234567890abcdef1234'
+    candidate_2 = 'abcd9999567890abcdef1234567890abcdef1234'
+
+    for commit_hash in [candidate_1, candidate_2]:
+        commit_path = temp_repo.objects_dir() / commit_hash[:2] / commit_hash
+        commit_path.parent.mkdir(parents=True, exist_ok=True)
+        commit_path.write_text('dummy')
+
+    result = cli_commands.checkout(
+        working_dir_path=str(temp_repo.working_dir),
+        target_ref=short_hash,
+    )
+
+    assert result == -1
+    
+    err_output = capsys.readouterr().err
+    assert f"error: short hash '{short_hash}' is ambiguous" in err_output
+    assert 'hint: The candidates are:' in err_output
+    assert f'hint:   {candidate_1}' in err_output
+    assert f'hint:   {candidate_2}' in err_output

@@ -2,7 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from libcaf.constants import DEFAULT_REPO_DIR, HEAD_FILE
-from libcaf.repository import Repository
+from libcaf.repository import AmbiguousRefError, Repository
 from pytest import CaptureFixture
 
 from caf import cli_commands
@@ -139,8 +139,8 @@ def test_diff_repo_error(temp_repo: Repository, capsys: CaptureFixture[str]) -> 
     (temp_repo.working_dir / DEFAULT_REPO_DIR / HEAD_FILE).unlink()
     assert cli_commands.diff(working_dir_path=temp_repo.working_dir,
                              commit1='abc123', commit2='def456') == -1
-
-    assert 'Repository error' in capsys.readouterr().err
+    
+    assert 'Cannot resolve reference abc123' in capsys.readouterr().err
 
 
 def test_diff_missing_parameters(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
@@ -214,3 +214,31 @@ def test_diff_nested_children_indentation(temp_repo: Repository, parse_commit_ha
 
     assert found_directory_diff, 'Directory modification should be detected'
     assert found_nested_indentation, 'Nested children should be indented by 3 spaces'
+
+
+def test_diff_ambiguous_short_hash_prints_git_style_error(temp_repo: Repository,
+                                                          capsys: CaptureFixture[str],
+                                                          monkeypatch) -> None:
+    commit1 = 'abcd'
+    commit2 = 'efgh'
+    candidate_1 = 'abcd1234567890abcdef1234567890abcdef1234'
+    candidate_2 = 'abcd9999567890abcdef1234567890abcdef1234'
+
+    def _raise_ambiguous(*args, **kwargs):
+        raise AmbiguousRefError([candidate_1, candidate_2])
+
+    monkeypatch.setattr(Repository, 'diff_commits', _raise_ambiguous)
+
+    result = cli_commands.diff(
+        working_dir_path=str(temp_repo.working_dir),
+        commit1=commit1,
+        commit2=commit2,
+    )
+
+    assert result == -1
+    assert capsys.readouterr().err == (
+        f"error: short hash '{commit1}' is ambiguous\n"
+        'hint: The candidates are:\n'
+        f'hint:   {candidate_1}\n'
+        f'hint:   {candidate_2}\n'
+    )

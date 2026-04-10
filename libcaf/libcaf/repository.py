@@ -16,7 +16,7 @@ from functools import wraps
 from typing import Concatenate, Optional, Tuple
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
-                        OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE)
+                        OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE, MIN_HASH_LENGTH)
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree, hash_file, restore_blob_to_path
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref, coerce_to_ref
 from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, compute_merge_tree, is_binary_blob, three_way_merge
@@ -31,6 +31,14 @@ class RepositoryError(Exception):
 
 class RepositoryNotFoundError(RepositoryError):
     """Exception raised when a repository is not found."""
+
+
+class AmbiguousRefError(RepositoryError):
+    """Exception raised when a short hash matches multiple object hashes."""
+
+    def __init__(self, candidates: list[HashRef]) -> None:
+        self.candidates = candidates
+        super().__init__(f'Ambiguous reference: {", ".join(candidates)}')
 
 class MergeResult(Enum):
     UP_TO_DATE = auto()
@@ -240,12 +248,37 @@ class Repository:
                     return None
 
             case str():
-                # Try to figure out what kind of ref it is by looking at the list of refs
-                # in the refs directory
-                if ref.upper() == 'HEAD' or ref in self.refs():
+                if ref.upper() == 'HEAD':
+                    return self.resolve_ref(SymRef('HEAD'))
+                
+                if ref in self.refs():
                     return self.resolve_ref(SymRef(ref))
-                if len(ref) == HASH_LENGTH and all(c in HASH_CHARSET for c in ref):
-                    return HashRef(ref)
+                
+                hex_ref = ref.lower()
+
+                if len(hex_ref) == HASH_LENGTH and all(c in HASH_CHARSET for c in hex_ref):
+                    return HashRef(hex_ref
+                                   )
+                if MIN_HASH_LENGTH <= len(hex_ref) < HASH_LENGTH and all(c in HASH_CHARSET for c in hex_ref):
+                    candidates: list[HashRef] = []
+                    
+                    prefix_dir = self.objects_dir() / hex_ref[:2]
+                    
+                    if prefix_dir.is_dir():
+                        for obj_file in prefix_dir.iterdir():
+                            if not obj_file.is_file():
+                                continue
+                                
+                            candidate = obj_file.name
+                            if len(candidate) == HASH_LENGTH and candidate.startswith(hex_ref):
+                                candidates.append(HashRef(candidate))
+
+                    if len(candidates) == 1:
+                        return candidates[0]
+                    if len(candidates) == 0:
+                        return None
+
+                    raise AmbiguousRefError(candidates)
 
                 msg = f'Invalid reference: {ref}'
                 raise RefError(msg)
@@ -483,15 +516,15 @@ class Repository:
         :return: A generator yielding LogEntry objects representing the commits in the log.
         :raises RepositoryError: If a commit cannot be loaded.
         :raises RepositoryNotFoundError: If the repository does not exist."""
-        tip = tip or self.head_ref()
-        current_hash = self.resolve_ref(tip)
-
-        if current_hash is None:
-            return
-
-        processing_hash: HashRef | None = current_hash
-
         try:
+            tip = tip or self.head_ref()
+            current_hash = self.resolve_ref(tip)
+
+            if current_hash is None:
+                return
+
+            processing_hash: HashRef | None = current_hash
+
             queue: list[tuple[int, int, HashRef]] = []
             tie_breaker = count()
             
@@ -513,10 +546,12 @@ class Repository:
                         enqueued.add(parent_ref)
                         parent_commit = load_commit(self.objects_dir(), parent_ref)
                         heapq.heappush(queue, (-parent_commit.timestamp, next(tie_breaker), parent_ref))
+        except (AmbiguousRefError, RefError):
+            raise
         except Exception as e:
-            msg = f'Error loading commit {processing_hash}'
+            msg = f'Error traversing log starting from {tip}'
             raise RepositoryError(msg) from e
-
+        
     @requires_repo
     def diff_commits(self, commit_ref1: Ref | None = None, commit_ref2: Ref | None = None) -> Sequence[Diff]:
         """Generate a diff between two commits in the repository.
@@ -544,6 +579,8 @@ class Repository:
 
             commit1 = load_commit(self.objects_dir(), commit_hash1)
             commit2 = load_commit(self.objects_dir(), commit_hash2)
+        except (AmbiguousRefError, RefError):
+            raise
         except Exception as e:
             msg = 'Error loading commit'
             raise RepositoryError(msg) from e
@@ -862,36 +899,40 @@ class Repository:
     @requires_repo
     def checkout(self, target_ref: Ref | str) -> None:
         """Checkout a target reference into the working directory and update HEAD."""
-        
+        try:
         # Normalize the incoming reference
-        safe_ref = coerce_to_ref(target_ref)
+            safe_ref = coerce_to_ref(target_ref)
 
-        is_branch = False
-        full_branch_ref = None
+            is_branch = False
+            full_branch_ref = None
 
-        # Check if the target is an existing branch
-        if isinstance(safe_ref, SymRef):
-            if '/' not in safe_ref or safe_ref.startswith('heads/'):
-                short_name = safe_ref.branch_name()                
-                if self.branch_exists(SymRef(short_name)):
-                    is_branch = True
-                    full_branch_ref = SymRef(f"heads/{short_name}")
-                    safe_ref = full_branch_ref
+            # Check if the target is an existing branch
+            if isinstance(safe_ref, SymRef):
+                if '/' not in safe_ref or safe_ref.startswith('heads/'):
+                    short_name = safe_ref.branch_name()                
+                    if self.branch_exists(SymRef(short_name)):
+                        is_branch = True
+                        full_branch_ref = SymRef(f"heads/{short_name}")
+                        safe_ref = full_branch_ref
 
-        target_hash = self.resolve_ref(safe_ref)
-        
-        if target_hash is None:
-            raise RefError(f"Cannot resolve reference: '{target_ref}'")
+            target_hash = self.resolve_ref(safe_ref)
+            
+            if target_hash is None:
+                raise RefError(f"Cannot resolve reference: '{target_ref}'")
 
-        self.sync_working_dir_to_commit(target_hash)
-        
-        # Update HEAD (Attach vs. Detach)
-        if is_branch and full_branch_ref:
-            # It's a branch: Attach HEAD
-            self.update_head(full_branch_ref)
-        else:
-            # It's a tag or a raw commit hash: Detach HEAD
-            self.update_head(HashRef(target_hash))
+            self.sync_working_dir_to_commit(target_hash)
+            
+            # Update HEAD (Attach vs. Detach)
+            if is_branch and full_branch_ref:
+                # It's a branch: Attach HEAD
+                self.update_head(full_branch_ref)
+            else:
+                # It's a tag or a raw commit hash: Detach HEAD
+                self.update_head(HashRef(target_hash))
+        except (AmbiguousRefError, RefError):
+            raise
+        except Exception as e:
+            raise RepositoryError(f"Failed to checkout '{target_ref}'") from e
     
     @requires_repo
     def tags_dir(self) -> Path:
