@@ -8,7 +8,7 @@ from pathlib import Path
 from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH, SHORT_HASH_LENGTH
 from libcaf.plumbing import hash_file as plumbing_hash_file
 from libcaf.ref import SymRef, HashRef, RefError
-from libcaf.repository import (AddedDiff, Diff, ModifiedDiff, MovedToDiff, RemovedDiff, Repository, RepositoryError,
+from libcaf.repository import (AddedDiff, AmbiguousRefError, Diff, ModifiedDiff, MovedToDiff, RemovedDiff, Repository, RepositoryError,
                                RepositoryNotFoundError, MergeResult)
 
 
@@ -18,6 +18,13 @@ def _print_error(message: str) -> None:
 
 def _print_success(message: str) -> None:
     print(message)
+
+
+def _print_ambiguous_short_hash_error(short_hash: str, candidates: Sequence[HashRef]) -> None:
+    print(f"error: short hash '{short_hash}' is ambiguous", file=sys.stderr)
+    print('hint: The candidates are:', file=sys.stderr)
+    for candidate in candidates:
+        print(f'hint:   {candidate}', file=sys.stderr)
 
 
 def init(**kwargs) -> int:
@@ -254,11 +261,12 @@ def commit(**kwargs) -> int:
 
 def log(**kwargs) -> int:
     repo = _repo_from_cli_kwargs(kwargs)
+    target = kwargs.get('target')
 
     try:
         has_commits = False
 
-        for item in repo.log():
+        for item in repo.log(tip=target):
             if not has_commits:
                 _print_success('Commit history:\n')
                 has_commits = True
@@ -282,6 +290,9 @@ def log(**kwargs) -> int:
         return 0
     except RepositoryNotFoundError:
         _print_error(f'No repository found at {repo.repo_path()}')
+        return -1
+    except AmbiguousRefError as e:
+        _print_ambiguous_short_hash_error(str(target), e.candidates)
         return -1
     except RepositoryError as re:
         _print_error(f'Repository error: {re}')
@@ -504,6 +515,9 @@ def checkout(**kwargs) -> int:
     except RefError as e:
         _print_error(f"{e}")
         _print_error(f"Please ensure '{target}' is a valid branch, tag, or commit hash.")
+        return -1
+    except AmbiguousRefError as e:
+        _print_ambiguous_short_hash_error(str(target), e.candidates)
         return -1
     except RepositoryNotFoundError as e:
         _print_error(f" Not a valid CAF repository ({e})")
