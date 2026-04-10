@@ -53,7 +53,6 @@ def _setup_text_conflict_state(temp_repo: Repository) -> tuple[str, str]:
 
 
 def test_merge_missing_target_argument_aborts_with_error(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
-    # Direct function call with missing argument, no monkeypatch needed
     result = cli_commands.merge(working_dir_path=str(temp_repo.working_dir), target_ref=None, author='QA')
     
     assert result == -1
