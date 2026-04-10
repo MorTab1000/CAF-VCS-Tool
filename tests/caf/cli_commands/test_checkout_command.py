@@ -1,5 +1,4 @@
 from libcaf.ref import SymRef
-from libcaf.constants import DEFAULT_REPO_DIR
 from libcaf.repository import Repository
 from caf import cli_commands
 from pytest import CaptureFixture
@@ -65,10 +64,10 @@ def test_checkout_create_branch_on_empty_repo(temp_repo: Repository, capsys: Cap
     result = cli_commands.checkout(working_dir_path=temp_repo.working_dir, target_ref='feature', branch=True)
     
     assert result == 0
-    
-    head_content = (temp_repo.working_dir / DEFAULT_REPO_DIR / 'HEAD').read_text().strip()
+
+    head_content = (temp_repo.working_dir / temp_repo.repo_path() / 'HEAD').read_text().strip()
     assert head_content == 'ref: heads/feature'
-    
+
     assert "Switched to a new branch 'feature'" in capsys.readouterr().out
 
 
@@ -82,6 +81,6 @@ def test_integration_checkout_unborn_then_commit(temp_repo: Repository) -> None:
     commit_hash = temp_repo.commit_working_dir('Integration Tester', 'First commit on feature branch')
     
     # Verify the branch file was FINALLY born on disk
-    feature_branch_file = temp_repo.working_dir / DEFAULT_REPO_DIR / 'refs' / 'heads' / 'feature'
+    feature_branch_file = temp_repo.working_dir / temp_repo.repo_path() / 'refs' / 'heads' / 'feature'
     assert feature_branch_file.exists(), "The commit command failed to birth the unborn branch!"
     assert feature_branch_file.read_text().strip() == commit_hash
