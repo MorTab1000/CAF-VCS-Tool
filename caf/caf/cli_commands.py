@@ -26,7 +26,7 @@ def init(**kwargs) -> int:
 
     try:
         repo.init(default_branch)
-        _print_success(f'Initialized empty CAF repository in {repo.repo_path()} on branch {default_branch}')
+        _print_success(f"Initialized empty CAF repository in {repo.repo_path()}")
         return 0
     except FileExistsError:
         _print_error(f'CAF repository already exists in {repo.working_dir}')
