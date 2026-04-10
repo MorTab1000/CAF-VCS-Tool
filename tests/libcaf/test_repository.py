@@ -1,8 +1,9 @@
 from pathlib import Path
 from shutil import rmtree
 
+from libcaf import Commit
 from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH
-from libcaf.plumbing import hash_object, load_commit, load_tree
+from libcaf.plumbing import hash_object, load_commit, load_tree, save_commit
 from libcaf.ref import RefError, SymRef
 from libcaf.repository import HashRef, Repository, RepositoryError, branch_ref
 from pytest import raises
@@ -106,6 +107,35 @@ def test_head_log(temp_repo: Repository) -> None:
     commit_ref2 = temp_repo.commit_working_dir('Author', 'Second commit')
 
     assert [_.commit_ref for _ in temp_repo.log()] == [commit_ref2, commit_ref1]
+
+
+def test_log_empty_repo_returns_no_entries(temp_repo: Repository) -> None:
+    assert list(temp_repo.log()) == []
+
+
+def test_log_traverses_commit_graph_by_timestamp_without_duplicates(temp_repo: Repository) -> None:
+    (temp_repo.working_dir / 'file.txt').write_text('base')
+    base_ref = temp_repo.commit_working_dir('Author', 'base')
+    base_commit = load_commit(temp_repo.objects_dir(), base_ref)
+    base_ts = base_commit.timestamp
+
+    left_commit = Commit(base_commit.tree_hash, 'Author', 'left', base_ts + 2, [base_ref])
+    save_commit(temp_repo.objects_dir(), left_commit)
+    left_ref = hash_object(left_commit)
+
+    right_commit = Commit(base_commit.tree_hash, 'Author', 'right', base_ts + 3, [base_ref])
+    save_commit(temp_repo.objects_dir(), right_commit)
+    right_ref = hash_object(right_commit)
+
+    merge_commit = Commit(base_commit.tree_hash, 'Author', 'merge', base_ts + 4, [left_ref, right_ref])
+    save_commit(temp_repo.objects_dir(), merge_commit)
+    merge_ref = hash_object(merge_commit)
+
+    temp_repo.update_head(HashRef(merge_ref))
+
+    history = [entry.commit_ref for entry in temp_repo.log()]
+
+    assert history == [merge_ref, right_ref, left_ref, base_ref]
 
 
 def test_refs_directory_not_exists_raises_error(temp_repo: Repository) -> None:
