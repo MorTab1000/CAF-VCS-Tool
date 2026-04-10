@@ -32,6 +32,14 @@ class RepositoryError(Exception):
 class RepositoryNotFoundError(RepositoryError):
     """Exception raised when a repository is not found."""
 
+
+class AmbiguousRefError(RepositoryError):
+    """Exception raised when a short hash matches multiple object hashes."""
+
+    def __init__(self, candidates: list[HashRef]) -> None:
+        self.candidates = candidates
+        super().__init__(f'Ambiguous reference: {", ".join(candidates)}')
+
 class MergeResult(Enum):
     UP_TO_DATE = auto()
     FAST_FORWARD = auto()
@@ -246,6 +254,27 @@ class Repository:
                     return self.resolve_ref(SymRef(ref))
                 if len(ref) == HASH_LENGTH and all(c in HASH_CHARSET for c in ref):
                     return HashRef(ref)
+                if 4 <= len(ref) < HASH_LENGTH and all(c in HASH_CHARSET for c in ref):
+                    candidates: list[HashRef] = []
+
+                    for obj_file in self.objects_dir().rglob('*'):
+                        if not obj_file.is_file():
+                            continue
+
+                        candidate = obj_file.name
+                        if len(candidate) != HASH_LENGTH:
+                            continue
+                        if not all(c in HASH_CHARSET for c in candidate):
+                            continue
+                        if candidate.startswith(ref):
+                            candidates.append(HashRef(candidate))
+
+                    if len(candidates) == 1:
+                        return candidates[0]
+                    if len(candidates) == 0:
+                        return None
+
+                    raise AmbiguousRefError(candidates)
 
                 msg = f'Invalid reference: {ref}'
                 raise RefError(msg)
