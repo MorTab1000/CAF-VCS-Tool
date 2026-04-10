@@ -256,22 +256,28 @@ def log(**kwargs) -> int:
     repo = _repo_from_cli_kwargs(kwargs)
 
     try:
-        history = list(repo.log())
-        if not history:
-            _print_success('No commits in the repository.')
-            return 0
+        has_commits = False
 
-        _print_success('Commit history:\n')
-        for item in history:
+        for item in repo.log():
+            if not has_commits:
+                _print_success('Commit history:\n')
+                has_commits = True
             commit = item.commit
+            short_hash = item.commit_ref[:7]
 
-            print(f'Commit: {item.commit_ref}')
+            print(f'Commit: {short_hash}')
+            if len(commit.parents) > 1:
+                short_parents = ' '.join(parent[:7] for parent in commit.parents)
+                print(f'Merge: {short_parents}')
             print(f'Author: {commit.author}')
             commit_date = datetime.fromtimestamp(commit.timestamp).strftime('%Y-%m-%d %H:%M:%S')
             print(f'Date: {commit_date}\n')
             for line in commit.message.splitlines():
                 print(f'    {line}')
             print('\n' + '-' * 50 + '\n')
+
+        if not has_commits:
+            _print_success('No commits in the repository.')
 
         return 0
     except RepositoryNotFoundError:
