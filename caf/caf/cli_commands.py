@@ -463,6 +463,13 @@ def checkout(**kwargs) -> int:
         if create_branch:
             if repo.head_commit() is None:
                 # Unborn branch case: Only update HEAD to point to the new branch, no need to create a branch ref since there are no commits yet
+                if '..' in target or target.startswith('/') or target.startswith('\\'):
+                    _print_error(f"Invalid branch name '{target}'.")
+                    return -1
+                
+                # Normalize: strip 'heads/' if the user explicitly typed it
+                target = target[6:] if target.startswith('heads/') else target
+
                 repo.update_head(SymRef(f"heads/{target}"))
                 _print_success(f"Switched to a new branch '{target}'")
                 return 0
