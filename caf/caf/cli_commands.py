@@ -5,7 +5,7 @@ from collections.abc import MutableSequence, Sequence
 from datetime import datetime
 from pathlib import Path
 
-from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH
+from libcaf.constants import DEFAULT_BRANCH, HASH_LENGTH, SHORT_HASH_LENGTH
 from libcaf.plumbing import hash_file as plumbing_hash_file
 from libcaf.ref import SymRef, HashRef, RefError
 from libcaf.repository import (AddedDiff, Diff, ModifiedDiff, MovedToDiff, RemovedDiff, Repository, RepositoryError,
@@ -256,22 +256,28 @@ def log(**kwargs) -> int:
     repo = _repo_from_cli_kwargs(kwargs)
 
     try:
-        history = list(repo.log())
-        if not history:
-            _print_success('No commits in the repository.')
-            return 0
+        has_commits = False
 
-        _print_success('Commit history:\n')
-        for item in history:
+        for item in repo.log():
+            if not has_commits:
+                _print_success('Commit history:\n')
+                has_commits = True
             commit = item.commit
+            short_hash = item.commit_ref[:SHORT_HASH_LENGTH]
 
-            print(f'Commit: {item.commit_ref}')
+            print(f'Commit: {short_hash}')
+            if len(commit.parents) > 1:
+                short_parents = ' '.join(parent[:SHORT_HASH_LENGTH] for parent in commit.parents)
+                print(f'Merge: {short_parents}')
             print(f'Author: {commit.author}')
             commit_date = datetime.fromtimestamp(commit.timestamp).strftime('%Y-%m-%d %H:%M:%S')
             print(f'Date: {commit_date}\n')
             for line in commit.message.splitlines():
                 print(f'    {line}')
             print('\n' + '-' * 50 + '\n')
+
+        if not has_commits:
+            _print_success('No commits in the repository.')
 
         return 0
     except RepositoryNotFoundError:
