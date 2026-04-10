@@ -16,7 +16,7 @@ from functools import wraps
 from typing import Concatenate, Optional, Tuple
 from . import Blob, Commit, Tree, TreeRecord, TreeRecordType
 from .constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HASH_CHARSET, HASH_LENGTH, HEADS_DIR, HEAD_FILE,
-                        OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE, MIN_HASH_LENGTH)
+                        OBJECTS_SUBDIR, REFS_DIR, TAGS_DIR, MERGE_HEAD_FILE, MIN_HASH_LENGTH, SHORT_HASH_LENGTH)
 from .plumbing import hash_object, load_commit, load_tree, save_commit, save_file_content, save_tree, hash_file, restore_blob_to_path
 from .ref import HashRef, Ref, RefError, SymRef, read_ref, write_ref, coerce_to_ref
 from libcaf.merge_algo import MergeConflict, find_lca, merge_trees, compute_merge_tree, is_binary_blob, three_way_merge
@@ -385,6 +385,49 @@ class Repository:
         :return: A list of branch names.
         :raises RepositoryNotFoundError: If the repository does not exist."""
         return [x.name for x in self.heads_dir().iterdir() if x.is_file()]
+
+    @requires_repo
+    def get_status(self) -> dict[str, str | list[str]]:
+        """Return working tree status by comparing HEAD directly with the working directory."""
+        head_ref = self.head_ref()
+        head_commit_hash = self.head_commit()
+
+        if isinstance(head_ref, SymRef):
+            branch_state = head_ref.branch_name()
+        elif isinstance(head_ref, HashRef):
+            branch_state = f'detached at {head_ref[:SHORT_HASH_LENGTH]}'
+        elif head_commit_hash is not None:
+            branch_state = f'detached at {head_commit_hash[:SHORT_HASH_LENGTH]}'
+        else:
+            branch_state = 'detached'
+
+        head_files: dict[str, HashRef] = {}
+        if head_commit_hash is not None:
+            for path, blob_hash in self._collect_blob_map(head_commit_hash).items():
+                head_files[path.as_posix()] = blob_hash
+
+        working_files: dict[str, str] = {}
+        for file_path in self.working_dir.rglob('*'):
+            if not file_path.is_file():
+                continue
+
+            rel_path = file_path.relative_to(self.working_dir)
+            if rel_path.parts and rel_path.parts[0] == self.repo_dir.name:
+                continue
+
+            working_files[rel_path.as_posix()] = hash_file(file_path)
+
+        added = sorted(path for path in working_files if path not in head_files)
+        deleted = sorted(path for path in head_files if path not in working_files)
+        modified = sorted(path for path in working_files
+                          if path in head_files and working_files[path] != head_files[path])
+
+        return {
+            'branch': branch_state,
+            'added': added,
+            'modified': modified,
+            'deleted': deleted,
+        }
 
     @requires_repo
     def save_dir(self, path: Path) -> HashRef:
