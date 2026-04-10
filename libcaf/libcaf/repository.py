@@ -248,26 +248,23 @@ class Repository:
                     return None
 
             case str():
-                # Try to figure out what kind of ref it is by looking at the list of refs
-                # in the refs directory
                 if ref.upper() == 'HEAD' or ref in self.refs():
                     return self.resolve_ref(SymRef(ref))
                 if len(ref) == HASH_LENGTH and all(c in HASH_CHARSET for c in ref):
                     return HashRef(ref)
                 if MIN_HASH_LENGTH <= len(ref) < HASH_LENGTH and all(c in HASH_CHARSET for c in ref):
                     candidates: list[HashRef] = []
-
-                    for obj_file in self.objects_dir().rglob('*'):
-                        if not obj_file.is_file():
-                            continue
-
-                        candidate = obj_file.name
-                        if len(candidate) != HASH_LENGTH:
-                            continue
-                        if not all(c in HASH_CHARSET for c in candidate):
-                            continue
-                        if candidate.startswith(ref):
-                            candidates.append(HashRef(candidate))
+                    
+                    prefix_dir = self.objects_dir() / ref[:2]
+                    
+                    if prefix_dir.is_dir():
+                        for obj_file in prefix_dir.iterdir():
+                            if not obj_file.is_file():
+                                continue
+                                
+                            candidate = obj_file.name
+                            if len(candidate) == HASH_LENGTH and candidate.startswith(ref):
+                                candidates.append(HashRef(candidate))
 
                     if len(candidates) == 1:
                         return candidates[0]
