@@ -509,15 +509,15 @@ class Repository:
         :return: A generator yielding LogEntry objects representing the commits in the log.
         :raises RepositoryError: If a commit cannot be loaded.
         :raises RepositoryNotFoundError: If the repository does not exist."""
-        tip = tip or self.head_ref()
-        current_hash = self.resolve_ref(tip)
-
-        if current_hash is None:
-            return
-
-        processing_hash: HashRef | None = current_hash
-
         try:
+            tip = tip or self.head_ref()
+            current_hash = self.resolve_ref(tip)
+
+            if current_hash is None:
+                return
+
+            processing_hash: HashRef | None = current_hash
+
             queue: list[tuple[int, int, HashRef]] = []
             tie_breaker = count()
             
@@ -539,10 +539,12 @@ class Repository:
                         enqueued.add(parent_ref)
                         parent_commit = load_commit(self.objects_dir(), parent_ref)
                         heapq.heappush(queue, (-parent_commit.timestamp, next(tie_breaker), parent_ref))
+        except (AmbiguousRefError, RefError):
+            raise
         except Exception as e:
-            msg = f'Error loading commit {processing_hash}'
+            msg = f'Error traversing log starting from {tip}'
             raise RepositoryError(msg) from e
-
+        
     @requires_repo
     def diff_commits(self, commit_ref1: Ref | None = None, commit_ref2: Ref | None = None) -> Sequence[Diff]:
         """Generate a diff between two commits in the repository.
@@ -570,6 +572,8 @@ class Repository:
 
             commit1 = load_commit(self.objects_dir(), commit_hash1)
             commit2 = load_commit(self.objects_dir(), commit_hash2)
+        except (AmbiguousRefError, RefError):
+            raise
         except Exception as e:
             msg = 'Error loading commit'
             raise RepositoryError(msg) from e
@@ -888,36 +892,40 @@ class Repository:
     @requires_repo
     def checkout(self, target_ref: Ref | str) -> None:
         """Checkout a target reference into the working directory and update HEAD."""
-        
+        try:
         # Normalize the incoming reference
-        safe_ref = coerce_to_ref(target_ref)
+            safe_ref = coerce_to_ref(target_ref)
 
-        is_branch = False
-        full_branch_ref = None
+            is_branch = False
+            full_branch_ref = None
 
-        # Check if the target is an existing branch
-        if isinstance(safe_ref, SymRef):
-            if '/' not in safe_ref or safe_ref.startswith('heads/'):
-                short_name = safe_ref.branch_name()                
-                if self.branch_exists(SymRef(short_name)):
-                    is_branch = True
-                    full_branch_ref = SymRef(f"heads/{short_name}")
-                    safe_ref = full_branch_ref
+            # Check if the target is an existing branch
+            if isinstance(safe_ref, SymRef):
+                if '/' not in safe_ref or safe_ref.startswith('heads/'):
+                    short_name = safe_ref.branch_name()                
+                    if self.branch_exists(SymRef(short_name)):
+                        is_branch = True
+                        full_branch_ref = SymRef(f"heads/{short_name}")
+                        safe_ref = full_branch_ref
 
-        target_hash = self.resolve_ref(safe_ref)
-        
-        if target_hash is None:
-            raise RefError(f"Cannot resolve reference: '{target_ref}'")
+            target_hash = self.resolve_ref(safe_ref)
+            
+            if target_hash is None:
+                raise RefError(f"Cannot resolve reference: '{target_ref}'")
 
-        self.sync_working_dir_to_commit(target_hash)
-        
-        # Update HEAD (Attach vs. Detach)
-        if is_branch and full_branch_ref:
-            # It's a branch: Attach HEAD
-            self.update_head(full_branch_ref)
-        else:
-            # It's a tag or a raw commit hash: Detach HEAD
-            self.update_head(HashRef(target_hash))
+            self.sync_working_dir_to_commit(target_hash)
+            
+            # Update HEAD (Attach vs. Detach)
+            if is_branch and full_branch_ref:
+                # It's a branch: Attach HEAD
+                self.update_head(full_branch_ref)
+            else:
+                # It's a tag or a raw commit hash: Detach HEAD
+                self.update_head(HashRef(target_hash))
+        except (AmbiguousRefError, RefError):
+            raise
+        except Exception as e:
+            raise RepositoryError(f"Failed to checkout '{target_ref}'") from e
     
     @requires_repo
     def tags_dir(self) -> Path:
