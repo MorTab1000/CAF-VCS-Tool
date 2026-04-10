@@ -26,7 +26,7 @@ def init(**kwargs) -> int:
 
     try:
         repo.init(default_branch)
-        _print_success(f'Initialized empty CAF repository in {repo.repo_path()} on branch {default_branch}')
+        _print_success(f"Initialized empty CAF repository in {repo.repo_path()}")
         return 0
     except FileExistsError:
         _print_error(f'CAF repository already exists in {repo.working_dir}')
@@ -461,6 +461,20 @@ def checkout(**kwargs) -> int:
         repo = _repo_from_cli_kwargs(kwargs)
 
         if create_branch:
+            if repo.head_commit() is None:
+                # Unborn branch case: Only update HEAD to point to the new branch, no need to create a branch ref since there are no commits yet
+                if '..' in target or target.startswith('/') or target.startswith('\\'):
+                    _print_error(f"Invalid branch name '{target}'.")
+                    return -1
+                
+                # Normalize: strip 'heads/' if the user explicitly typed it
+                target = target[6:] if target.startswith('heads/') else target
+
+                repo.update_head(SymRef(f"heads/{target}"))
+                _print_success(f"Switched to a new branch '{target}'")
+                return 0
+            
+            # Standard branch creation for a repo with history
             repo.add_branch(target)
             _print_success(f"Created branch '{target}'")
             checkout_target = target
