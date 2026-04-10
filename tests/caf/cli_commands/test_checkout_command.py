@@ -1,6 +1,8 @@
 from libcaf.ref import SymRef
+from libcaf.constants import DEFAULT_REPO_DIR
 from libcaf.repository import Repository
 from caf import cli_commands
+from pytest import CaptureFixture
 
 def test_checkout_short_branch_name_attaches_head(temp_repo: Repository) -> None:
     (temp_repo.working_dir / 'file.txt').write_text('base\n')
@@ -56,3 +58,30 @@ def test_checkout_commit_hash_detaches_head(temp_repo: Repository) -> None:
     head_file = temp_repo.working_dir / temp_repo.repo_dir / 'HEAD'
     head_content = head_file.read_text().strip()
     assert head_content == hash_v1
+
+
+def test_checkout_create_branch_on_empty_repo(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    """Ensure checkout -b works on a brand new repository by swapping the unborn branch reservation."""
+    result = cli_commands.checkout(working_dir_path=temp_repo.working_dir, target_ref='feature', branch=True)
+    
+    assert result == 0
+    
+    head_content = (temp_repo.working_dir / DEFAULT_REPO_DIR / 'HEAD').read_text().strip()
+    assert head_content == 'ref: heads/feature'
+    
+    assert "Switched to a new branch 'feature'" in capsys.readouterr().out
+
+
+def test_integration_checkout_unborn_then_commit(temp_repo: Repository) -> None:
+    """Swap unborn branch, then commit to prove the branch file is dynamically generated."""
+    # Swap the unborn branch to 'feature'
+    cli_commands.checkout(working_dir_path=temp_repo.working_dir, target_ref='feature', branch=True)
+    
+    # Create a file and make the very first commit
+    (temp_repo.working_dir / 'test.txt').write_text('Hello World\n')
+    commit_hash = temp_repo.commit_working_dir('Integration Tester', 'First commit on feature branch')
+    
+    # Verify the branch file was FINALLY born on disk
+    feature_branch_file = temp_repo.working_dir / DEFAULT_REPO_DIR / 'refs' / 'heads' / 'feature'
+    assert feature_branch_file.exists(), "The commit command failed to birth the unborn branch!"
+    assert feature_branch_file.read_text().strip() == commit_hash
