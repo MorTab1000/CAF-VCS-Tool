@@ -1,10 +1,12 @@
 """libcaf repository management."""
 
 from contextlib import ExitStack
+import heapq
 import os
 import shutil
 import tempfile
 import uuid
+from itertools import count
 from pathlib import Path
 from collections import deque
 from collections.abc import Callable, Generator, Sequence
@@ -484,14 +486,38 @@ class Repository:
         tip = tip or self.head_ref()
         current_hash = self.resolve_ref(tip)
 
-        try:
-            while current_hash:
-                commit = load_commit(self.objects_dir(), current_hash)
-                yield LogEntry(HashRef(current_hash), commit)
+        if current_hash is None:
+            return
 
-                current_hash = HashRef(commit.parents[0]) if commit.parents else None
+        processing_hash: HashRef | None = current_hash
+
+        try:
+            queue: list[tuple[int, int, HashRef, Commit]] = []
+            tie_breaker = count()
+            initial_commit = load_commit(self.objects_dir(), current_hash)
+            heapq.heappush(queue, (-initial_commit.timestamp, next(tie_breaker), HashRef(current_hash), initial_commit))
+
+            visited: set[HashRef] = set()
+
+            while queue:
+                _, _, commit_hash, commit = heapq.heappop(queue)
+
+                if commit_hash in visited:
+                    continue
+
+                visited.add(commit_hash)
+                yield LogEntry(commit_hash, commit)
+
+                for parent_hash in commit.parents:
+                    parent_ref = HashRef(parent_hash)
+                    if parent_ref in visited:
+                        continue
+
+                    processing_hash = parent_ref
+                    parent_commit = load_commit(self.objects_dir(), parent_ref)
+                    heapq.heappush(queue, (-parent_commit.timestamp, next(tie_breaker), parent_ref, parent_commit))
         except Exception as e:
-            msg = f'Error loading commit {current_hash}'
+            msg = f'Error loading commit {processing_hash}'
             raise RepositoryError(msg) from e
 
     @requires_repo
