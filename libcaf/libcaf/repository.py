@@ -492,30 +492,27 @@ class Repository:
         processing_hash: HashRef | None = current_hash
 
         try:
-            queue: list[tuple[int, int, HashRef, Commit]] = []
+            queue: list[tuple[int, int, HashRef]] = []
             tie_breaker = count()
+            
+            enqueued: set[HashRef] = {current_hash}
+            
             initial_commit = load_commit(self.objects_dir(), current_hash)
-            heapq.heappush(queue, (-initial_commit.timestamp, next(tie_breaker), HashRef(current_hash), initial_commit))
-
-            visited: set[HashRef] = set()
+            heapq.heappush(queue, (-initial_commit.timestamp, next(tie_breaker), current_hash))
 
             while queue:
-                _, _, commit_hash, commit = heapq.heappop(queue)
+                _, _, commit_hash = heapq.heappop(queue)
 
-                if commit_hash in visited:
-                    continue
-
-                visited.add(commit_hash)
+                commit = load_commit(self.objects_dir(), commit_hash)
                 yield LogEntry(commit_hash, commit)
 
                 for parent_hash in commit.parents:
                     parent_ref = HashRef(parent_hash)
-                    if parent_ref in visited:
-                        continue
-
-                    processing_hash = parent_ref
-                    parent_commit = load_commit(self.objects_dir(), parent_ref)
-                    heapq.heappush(queue, (-parent_commit.timestamp, next(tie_breaker), parent_ref, parent_commit))
+                    
+                    if parent_ref not in enqueued:
+                        enqueued.add(parent_ref)
+                        parent_commit = load_commit(self.objects_dir(), parent_ref)
+                        heapq.heappush(queue, (-parent_commit.timestamp, next(tie_breaker), parent_ref))
         except Exception as e:
             msg = f'Error loading commit {processing_hash}'
             raise RepositoryError(msg) from e
