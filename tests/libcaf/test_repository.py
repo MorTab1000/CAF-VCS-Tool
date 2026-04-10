@@ -433,7 +433,7 @@ def test_head_commit_with_symbolic_ref_returns_hash_ref(temp_repo: Repository) -
 
 def test_get_status_on_unborn_branch(temp_repo: Repository) -> None:
     status = temp_repo.get_status()
-    
+
     assert status['branch'] == DEFAULT_BRANCH
     assert status['added'] == []
     assert status['modified'] == []
@@ -464,4 +464,4 @@ def test_get_status_detects_changes(temp_repo: Repository) -> None:
 def test_get_status_ignores_dot_caf_directory(temp_repo: Repository) -> None:
     status = temp_repo.get_status()
     
-    assert not any(temp_repo.repo_path() in path for path in status['added'])
+    assert not any(temp_repo.repo_path().name in path for path in status['added'])
