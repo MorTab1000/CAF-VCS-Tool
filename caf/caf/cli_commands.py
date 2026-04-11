@@ -433,35 +433,34 @@ def merge(**kwargs) -> int:
         return -1
         
     try:
-        is_hash = len(raw_target) == HASH_LENGTH and all(c in HASH_CHARSET for c in raw_target.lower())
-        
+        is_hex = MIN_HASH_LENGTH <= len(raw_target) <= HASH_LENGTH and all(c in HASH_CHARSET for c in raw_target.lower())
+
+        # Build a list of candidates to try resolving
+        candidates = []
+        if raw_target.startswith('heads/') or raw_target.startswith('tags/'):
+            candidates.append(SymRef(raw_target))
+        else:
+            # Try it as a branch
+            candidates.append(SymRef(f'heads/{raw_target}'))
+            # Try it as a tag
+            candidates.append(SymRef(f'tags/{raw_target}'))
+            # Try it as a raw hash (short or long)
+            if is_hex:
+                candidates.append(raw_target)
+
         target_ref = None
         target_hash = None
 
-        if is_hash:
-            target_ref = HashRef(raw_target)
+        for candidate in candidates:
             try:
-                target_hash = repo.resolve_ref(target_ref)
-            except (RefError, OSError): 
-                pass # Handled below if it fails
-        else:
-            if raw_target.startswith('heads/') or raw_target.startswith('tags/'):
-                candidates = [raw_target]
-            else:
-                # Ambiguous input! Try branch first, then fallback to tag
-                candidates = [f'heads/{raw_target}', f'tags/{raw_target}']
-            
-            for candidate in candidates:
-                try:
-                    temp_ref = SymRef(candidate)
-                    possible_hash = repo.resolve_ref(temp_ref)
-                    if possible_hash:
-                        target_ref = temp_ref
-                        target_hash = possible_hash
-                        break 
-                except (RefError, OSError):
-                    # Ignore the FileNotFoundError and try the next candidate in the list
-                    continue
+                possible_hash = repo.resolve_ref(candidate)
+                if possible_hash:
+                    target_hash = possible_hash
+                    # If it was a SymRef, use that. If it was the raw hex string, use the resolved HashRef.
+                    target_ref = candidate if isinstance(candidate, SymRef) else possible_hash
+                    break 
+            except (RefError, AmbiguousRefError, OSError):
+                continue
 
         if not target_hash or not target_ref:
             _print_error(f'Could not resolve branch, tag, or commit reference: {raw_target}')
@@ -507,7 +506,10 @@ def merge(**kwargs) -> int:
                     
                 _print_success('\nPlease resolve the text markers, delete any backup files (~HEAD), and run "caf commit".')
                 return -1
-                
+    
+    except (RefError, AmbiguousRefError, OSError) as e:
+        _print_error(f'Could not resolve branch, tag, or commit reference: {raw_target}\n{e}')
+        return -1
     except RepositoryNotFoundError:
         _print_error(f'No repository found at {repo.repo_path()}')
         return -1
