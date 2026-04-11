@@ -350,3 +350,32 @@ def test_checkout_handles_file_directory_mutation(temp_repo) -> None:
     temp_repo.checkout(folder_commit_hash)
     assert data_path.is_dir()
     assert (data_path / 'info.txt').read_text() == 'Inside a folder'
+
+
+def test_checkout_aborts_on_untracked_directory_with_files(temp_repo) -> None:
+    (temp_repo.working_dir / 'README').write_text('Initial state')
+    base_hash = temp_repo.commit_working_dir('Mor', 'Base commit')
+
+    data_path = temp_repo.working_dir / 'data'
+    data_path.write_text('I am a tracked file')
+    target_hash = temp_repo.commit_working_dir('Mor', 'Target commit')
+
+    temp_repo.checkout(base_hash)
+
+    # Create an untracked directory containing an untracked file
+    data_path.mkdir()
+    secret_file = data_path / 'secret_keys.txt'
+    secret_file.write_text('SUPER SECRET UNTRACKED DATA')
+
+    # Try to time-travel forward to the Target Commit
+    # The safety check must intercept this to protect 'secret_keys.txt'
+    with raises(RepositoryError) as exc_info:
+        temp_repo.checkout(target_hash)
+
+    error_msg = str(exc_info.value).lower()
+    assert "aborted" in error_msg
+    assert "untracked" in error_msg
+
+    assert data_path.is_dir()
+    assert secret_file.exists()
+    assert secret_file.read_text() == 'SUPER SECRET UNTRACKED DATA'
