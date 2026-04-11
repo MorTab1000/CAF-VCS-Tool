@@ -1,23 +1,24 @@
+from collections.abc import Callable
 from pathlib import Path
 from collections.abc import Callable
-from libcaf.constants import DEFAULT_REPO_DIR, TAGS_DIR, REFS_DIR
+from libcaf.constants import TAGS_DIR, REFS_DIR
 from libcaf.repository import Repository
 from pytest import CaptureFixture
 
 from caf import cli_commands
 
-def _create_initial_commit(repo: Repository, working_dir: Path, author: str, message: str) -> None:
+def _create_initial_commit(repo: Repository, working_dir: Path, author: str, message: str, invoke_caf: Callable[..., int]) -> None:
     """Helper to ensure the repository has a commit to tag."""
     (working_dir / 'initial_file.txt').write_text('content')
-    cli_commands.commit(working_dir_path=working_dir, author=author, message=message)
+    invoke_caf(cli_commands.commit, repo, author=author, message=message)
 
-def test_create_tag_command(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str]) -> None:
+def test_create_tag_command(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     working_dir = temp_repo.working_dir
-    _create_initial_commit(temp_repo, working_dir, 'Tag Author', 'Initial commit for tag')
+    _create_initial_commit(temp_repo, working_dir, 'Tag Author', 'Initial commit for tag', invoke_caf)
     commit_hash = parse_commit_hash()
     tag_name = 'v1.0.0'
 
-    assert cli_commands.create_tag(working_dir_path=working_dir, tag_name=tag_name, commit_hash=commit_hash) == 0
+    assert invoke_caf(cli_commands.create_tag, temp_repo, tag_name=tag_name, commit_hash=commit_hash) == 0
 
     output = capsys.readouterr().out
     assert f'Tag "{tag_name}" created for commit {commit_hash}.' in output
@@ -32,44 +33,40 @@ def test_create_tag_no_repo(temp_repo_dir: Path, capsys: CaptureFixture[str]) ->
     assert 'No repository found' in capsys.readouterr().err
 
 
-def test_create_tag_missing_arguments(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
-    assert cli_commands.create_tag(working_dir_path=temp_repo.working_dir, tag_name=None, commit_hash='fake_hash') == -1
+def test_create_tag_missing_arguments(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
+    assert invoke_caf(cli_commands.create_tag, temp_repo, tag_name=None, commit_hash='fake_hash') == -1
     assert 'Tag name is required.' in capsys.readouterr().err
     
-    assert cli_commands.create_tag(working_dir_path=temp_repo.working_dir, tag_name='test', commit_hash=None) == -1
+    assert invoke_caf(cli_commands.create_tag, temp_repo, tag_name='test', commit_hash=None) == -1
     assert 'Commit hash is required.' in capsys.readouterr().err
 
 
-def test_create_tag_already_exists(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str]) -> None:
+def test_create_tag_already_exists(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     working_dir = temp_repo.working_dir
-    _create_initial_commit(temp_repo, working_dir, 'Tag Author', 'Initial commit')
+    _create_initial_commit(temp_repo, working_dir, 'Tag Author', 'Initial commit', invoke_caf)
     commit_hash = parse_commit_hash()
     tag_name = 'v1.0.0'
 
-    cli_commands.create_tag(working_dir_path=working_dir, tag_name=tag_name, commit_hash=commit_hash)
+    invoke_caf(cli_commands.create_tag, temp_repo, tag_name=tag_name, commit_hash=commit_hash)
 
-    assert cli_commands.create_tag(working_dir_path=working_dir, tag_name=tag_name, commit_hash=commit_hash) == -1
+    assert invoke_caf(cli_commands.create_tag, temp_repo, tag_name=tag_name, commit_hash=commit_hash) == -1
     assert 'Repository error: Tag "v1.0.0" already exists' in capsys.readouterr().err
 
 
-def test_create_tag_invalid_commit_hash(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
-    assert cli_commands.create_tag(working_dir_path=temp_repo.working_dir, tag_name='test', commit_hash='fake_hash') == -1
+def test_create_tag_invalid_commit_hash(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
+    assert invoke_caf(cli_commands.create_tag, temp_repo, tag_name='test', commit_hash='fake_hash') == -1
     assert 'Repository error: Invalid commit reference: Invalid reference: fake_hash' in capsys.readouterr().err
 
 
-def test_create_tag_on_empty_repo_history(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
-    assert cli_commands.create_tag(working_dir_path=temp_repo.working_dir, 
-                                   tag_name='first_tag', 
-                                   commit_hash='fake_hash') == -1
+def test_create_tag_on_empty_repo_history(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
+    assert invoke_caf(cli_commands.create_tag, temp_repo, tag_name='first_tag', commit_hash='fake_hash') == -1
     
     assert 'Repository error: Invalid commit reference: Invalid reference: fake_hash' in capsys.readouterr().err
 
-def test_create_tag_non_existent_commit(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_create_tag_non_existent_commit(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     # A valid 40-char hash that definitely doesn't exist in the repo
     ghost_hash = 'a' * 40
     
-    assert cli_commands.create_tag(working_dir_path=temp_repo.working_dir, 
-                                   tag_name='ghost', 
-                                   commit_hash=ghost_hash) == -1
+    assert invoke_caf(cli_commands.create_tag, temp_repo, tag_name='ghost', commit_hash=ghost_hash) == -1
     
     assert f'Commit "{ghost_hash}" does not exist' in capsys.readouterr().err

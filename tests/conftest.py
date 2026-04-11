@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from typing import Any, Callable
 from pathlib import Path
 from random import choice
 
@@ -8,6 +8,23 @@ from pytest import CaptureFixture, FixtureRequest, TempPathFactory, fixture
 
 def _random_string(length: int) -> str:
     return ''.join([choice('abcdefghijklmnopqrstuvwxyz0123456789-_') for _ in range(length)])
+
+
+@fixture
+def invoke_caf() -> Callable[..., int]:
+    """Fixture that returns a function to wrap CLI commands, ensuring they are always anchored
+    to the test sandbox.
+    """
+    def _invoke_caf(cmd_func: Callable[..., int], temp_repo: Repository, **kwargs: Any) -> int:
+        safe_kwargs = {
+            'working_dir_path': str(temp_repo.working_dir),
+            'repo_dir': str(temp_repo.repo_dir),
+            'author': 'TestBot',  # Standardize author for tests
+            **kwargs,
+        }
+        return cmd_func(**safe_kwargs)
+
+    return _invoke_caf
 
 
 @fixture

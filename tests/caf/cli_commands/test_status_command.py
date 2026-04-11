@@ -1,11 +1,13 @@
+from collections.abc import Callable
+
 from libcaf.constants import DEFAULT_BRANCH, SHORT_HASH_LENGTH
 from libcaf.repository import Repository
 from pytest import CaptureFixture
 
 from caf import cli_commands
 
-def test_status_on_unborn_branch_reports_clean_tree(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
-    assert cli_commands.status(working_dir_path=temp_repo.working_dir) == 0
+def test_status_on_unborn_branch_reports_clean_tree(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
+    assert invoke_caf(cli_commands.status, temp_repo) == 0
 
     output = capsys.readouterr().out
     assert f'On branch {DEFAULT_BRANCH}' in output
@@ -13,14 +15,14 @@ def test_status_on_unborn_branch_reports_clean_tree(temp_repo: Repository, capsy
     assert 'No commits yet' in output
 
 
-def test_status_on_clean_working_tree_after_commit(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_status_on_clean_working_tree_after_commit(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     tracked_file = temp_repo.working_dir / 'tracked.txt'
     tracked_file.write_text('tracked content\n')
 
     temp_repo.commit_working_dir('Status Tester', 'Initial commit')
     capsys.readouterr()
 
-    assert cli_commands.status(working_dir_path=temp_repo.working_dir) == 0
+    assert invoke_caf(cli_commands.status, temp_repo) == 0
 
     output = capsys.readouterr().out
     assert f'On branch {DEFAULT_BRANCH}' in output
@@ -28,7 +30,7 @@ def test_status_on_clean_working_tree_after_commit(temp_repo: Repository, capsys
 
 
 def test_status_reports_added_modified_and_deleted_files(temp_repo: Repository,
-                                                        capsys: CaptureFixture[str]) -> None:
+                                                        capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     to_modify = temp_repo.working_dir / 'to_modify.txt'
     to_delete = temp_repo.working_dir / 'to_delete.txt'
     untouched = temp_repo.working_dir / 'untouched.txt'
@@ -45,7 +47,7 @@ def test_status_reports_added_modified_and_deleted_files(temp_repo: Repository,
 
     capsys.readouterr()
 
-    assert cli_commands.status(working_dir_path=temp_repo.working_dir) == 0
+    assert invoke_caf(cli_commands.status, temp_repo) == 0
 
     output = capsys.readouterr().out
     assert 'Uncommitted changes in working directory:' in output
@@ -55,7 +57,7 @@ def test_status_reports_added_modified_and_deleted_files(temp_repo: Repository,
     assert 'untouched.txt' not in output
 
 
-def test_status_reports_detached_head(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_status_reports_detached_head(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     (temp_repo.working_dir / 'dummy.txt').write_text('content\n')
     head_hash = temp_repo.commit_working_dir('Status Tester', 'Initial commit')
     
@@ -64,7 +66,7 @@ def test_status_reports_detached_head(temp_repo: Repository, capsys: CaptureFixt
     # Clear the capture buffer before running our command
     capsys.readouterr()
     
-    assert cli_commands.status(working_dir_path=temp_repo.working_dir) == 0
+    assert invoke_caf(cli_commands.status, temp_repo) == 0
     
     # Verify the exact detached output
     output = capsys.readouterr().out

@@ -433,39 +433,38 @@ def merge(**kwargs) -> int:
         return -1
         
     try:
-        is_hash = len(raw_target) == HASH_LENGTH and all(c in HASH_CHARSET for c in raw_target.lower())
-        
+        # Build the exact list of candidates
+        candidates = []
+        if raw_target.startswith('heads/') or raw_target.startswith('tags/'):
+            candidates.append(SymRef(raw_target))
+        else:
+            candidates.append(SymRef(f'heads/{raw_target}'))
+            candidates.append(SymRef(f'tags/{raw_target}'))
+            # Append the raw string so the engine can trigger the short-hash logic!
+            candidates.append(raw_target)
+
         target_ref = None
         target_hash = None
 
-        if is_hash:
-            target_ref = HashRef(raw_target)
+        for candidate in candidates:
             try:
-                target_hash = repo.resolve_ref(target_ref)
-            except (RefError, OSError): 
-                pass # Handled below if it fails
-        else:
-            if raw_target.startswith('heads/') or raw_target.startswith('tags/'):
-                candidates = [raw_target]
-            else:
-                # Ambiguous input! Try branch first, then fallback to tag
-                candidates = [f'heads/{raw_target}', f'tags/{raw_target}']
-            
-            for candidate in candidates:
-                try:
-                    temp_ref = SymRef(candidate)
-                    possible_hash = repo.resolve_ref(temp_ref)
-                    if possible_hash:
-                        target_ref = temp_ref
-                        target_hash = possible_hash
-                        break 
-                except (RefError, OSError):
-                    # Ignore the FileNotFoundError and try the next candidate in the list
-                    continue
-
-        if not target_hash or not target_ref:
-            _print_error(f'Could not resolve branch, tag, or commit reference: {raw_target}')
-            return -1
+                possible_hash = repo.resolve_ref(candidate)
+                if possible_hash:
+                    target_hash = possible_hash
+                    target_ref = candidate if isinstance(candidate, SymRef) else possible_hash
+                    break 
+                    
+            except AmbiguousRefError as e:
+                _print_error(f"Error: Short hash '{raw_target}' is ambiguous.")
+                
+                if hasattr(e, 'candidates'):
+                    for conflict in e.candidates:
+                        _print_error(f"  - {conflict}")
+                        
+                return -1
+                
+            except (RefError, OSError):
+                continue
 
         current_head = repo.head_ref()
         merge_report = repo.merge(current_head, target_ref, author)
@@ -490,7 +489,7 @@ def merge(**kwargs) -> int:
                 if isinstance(current_head, SymRef):
                     repo.update_ref(current_head, merge_report.commit_hash)
                 else:
-                    # Detached HEAD fix: advance the HEAD pointer directly
+                    # Detached HEAD: advance the HEAD pointer directly
                     repo.update_head(HashRef(merge_report.commit_hash))
                 _print_success(f'Merge completed with a new merge commit. Current branch now points to {merge_report.commit_hash}.')
                 return 0
@@ -507,7 +506,13 @@ def merge(**kwargs) -> int:
                     
                 _print_success('\nPlease resolve the text markers, delete any backup files (~HEAD), and run "caf commit".')
                 return -1
-                
+    
+    except (RefError, AmbiguousRefError) as e:
+        _print_error(f'Could not resolve branch, tag, or commit reference: {raw_target}\n{e}')
+        return -1
+    except OSError as e:
+        _print_error(f'Filesystem error during merge operation: {e}')
+        return -1
     except RepositoryNotFoundError:
         _print_error(f'No repository found at {repo.repo_path()}')
         return -1
