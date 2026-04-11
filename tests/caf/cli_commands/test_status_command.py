@@ -1,9 +1,8 @@
-from libcaf.constants import DEFAULT_BRANCH
+from libcaf.constants import DEFAULT_BRANCH, SHORT_HASH_LENGTH
 from libcaf.repository import Repository
 from pytest import CaptureFixture
 
 from caf import cli_commands
-
 
 def test_status_on_unborn_branch_reports_clean_tree(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
     assert cli_commands.status(working_dir_path=temp_repo.working_dir) == 0
@@ -54,3 +53,22 @@ def test_status_reports_added_modified_and_deleted_files(temp_repo: Repository,
     assert 'modified: to_modify.txt' in output
     assert 'deleted: to_delete.txt' in output
     assert 'untouched.txt' not in output
+
+
+def test_status_reports_detached_head(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+    (temp_repo.working_dir / 'dummy.txt').write_text('content\n')
+    head_hash = temp_repo.commit_working_dir('Status Tester', 'Initial commit')
+    
+    temp_repo.update_head(head_hash)
+    
+    # Clear the capture buffer before running our command
+    capsys.readouterr()
+    
+    assert cli_commands.status(working_dir_path=temp_repo.working_dir) == 0
+    
+    # Verify the exact detached output
+    output = capsys.readouterr().out
+    short_hash = head_hash[:SHORT_HASH_LENGTH]
+    
+    assert f'HEAD detached at {short_hash}' in output
+    assert 'nothing to commit, working tree clean' in output
