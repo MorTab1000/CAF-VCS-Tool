@@ -1,42 +1,72 @@
-# CAF - Content Addressable Filesystem
-
-<div align="center">
-  <img src="assignment/assets/asp-title.png" alt="Advanced Systems Programming - CAF Project" width="600">
-</div>
-
-A lightweight version control system similar to Git, written in Python and C++.
-CAF serves as an educational project for understanding how complex distributed version control systems work under the
-hood.
+# CAF - Content Addressable Filesystem Engine
 
 [![Test CI](https://github.com/idoby/asp-caf-assignment/actions/workflows/tests.yml/badge.svg)](https://github.com/idoby/asp-caf-assignment/actions/workflows/tests.yml)
+![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)
+![C++](https://img.shields.io/badge/C++-17-00599C.svg)
+![CMake](https://img.shields.io/badge/CMake-3.28+-064F8C.svg)
 
 ## 🌟 Project Overview
 
-CAF (Content Addressable Filesystem) is a simplified version control system that implements core Git-like functionality
-including:
+`CAF` (Content Addressable Filesystem) is a high-performance, distributed version control system engine implemented as a hybrid Python and C++ architecture. 
 
-- Repository initialization and management
-- File content hashing and storage
-- Commit creation and tracking
-- Branch management
-- File system operations with content-addressable storage
+Designed to demonstrate mastery over systems programming, file-system mutations, and algorithmic state management, CAF provides a fully functional Git-like architecture from the ground up. It handles everything from low-level cryptographic object hashing in C++ to recursive 3-way branch merging in Python.
 
-The project demonstrates the fundamental concepts behind modern version control systems, including content-addressable
-storage, object models, and distributed workflows.
+### ⚡ Core Capabilities
 
-## 🏗️ Architecture
+- **Hybrid C++/Python Architecture:** Leverages a high-performance C++ core for I/O and cryptographic hashing, seamlessly exposed to a Python CLI and logic layer via `pybind11`.
+- **Directed Acyclic Graph (DAG) History:** Commits are modeled strictly as a DAG, supporting multi-parent histories, branch divergence, and complex timeline traversals.
+- **Advanced 3-Way Merging:** Implements dynamic Breadth-First Search (BFS) to locate the Lowest Common Ancestor (LCA), enabling structural tree diffing and true 3-way file merging with conflict markers.
+- **Transactional File Operations:** Ironclad `checkout`, `status`, and `abort` mechanisms that handle edge cases like recursive type mutations (e.g., a file becoming a directory) without data loss.
+- **Memory-Efficient Processing:** Utilizes memory-mapped files (`mmap`) for byte-level sequence alignment and diffing, ensuring scalability for large repositories.
 
-CAF is built as a hybrid Python/C++ system:
+## 🧩 Project Structure & Components
 
-- **Python Layer**: Command-line interface, high-level repository operations, and user-facing functionality
-- **C++ Core**: High-performance hashing, object storage, and low-level file operations
-- **Integration**: Python bindings using pybind11 for seamless interoperability
+The repository is explicitly divided into three main pillars to enforce a strict separation of concerns between the user interface, the logical engine, and the safety infrastructure.
 
-### Key Components
+### 1. The Command-Line Interface (`caf/`)
+The `caf` directory contains the pure Python user-facing application. 
+- **Command Routing (`cli_commands.py`):** Acts as the translation layer. It takes raw user input (e.g., `caf merge 4dbbd0c`), handles reference routing, and safely passes the translated instructions to the core engine.
+- **User Experience:** Manages terminal output, formats the DAG log history, and surfaces precise, Git-style error messages (such as ambiguous short-hash collision warnings).
 
-- **`caf/`**: Python CLI application and command implementations
-- **`libcaf/`**: Core C++ library with Python bindings
-- **`tests/`**: Comprehensive test suite for both Python and C++ components
+### 2. The Core Engine (`libcaf/`)
+The heart of the VCS, combining Python's algorithmic flexibility with C++'s raw execution speed.
+- **The C++ Backend (`libcaf/src/`):** Contains the low-level object definitions (`blob`, `tree`, `commit`), cryptographic SHA-1 hashing, and transactional binary disk I/O. Exposed to Python via `pybind11` in `bind.cpp`.
+- **The Python Logic (`libcaf/libcaf/`):** Contains the high-level API (`repository.py`), symbolic reference resolution (`ref.py`), and the heavy-lifting VCS algorithms (`merge_algo.py`, `sequences.py`).
+
+### 3. The Hermetic Test Suite (`tests/`)
+A comprehensive, enterprise-grade validation suite powered by `pytest`.
+- **CLI Tests (`tests/caf/`):** Verifies interface routing, ensuring the CLI correctly parses inputs and gracefully handles edge cases (like missing repositories or malformed tags).
+- **Engine Tests (`tests/libcaf/`):** Deeply tests the core graph logic and file-system mutations.
+- **Sandboxed Execution:** The entire suite utilizes custom deterministic fixtures (like `invoke_caf` and `temp_repo`) to guarantee that every test executes in a hermetically sealed, temporary environment, strictly preventing host system contamination or "Path Leakage."
+
+## 🏗️ System Architecture & Internal Mechanics
+
+CAF is explicitly designed with a strict separation of concerns: computationally expensive cryptographic hashing and disk I/O are written in C++, while the complex graph traversal and state-resolution algorithms are handled in Python.
+
+### The C++ Core (`libcaf`)
+The foundation of the engine is a high-performance C++ library exposed to Python via `pybind11`.
+- **Content-Addressable Storage:** Implements SHA-1 hashing (via OpenSSL) to generate deterministic, 40-character hex identifiers for all `Blob`, `Tree`, and `Commit` objects.
+- **Low-Level I/O & Concurrency:** Interacts directly with POSIX file descriptors and utilizes `ScopedFileLock` (`flock`) to enforce transactional file locks. This guarantees data integrity and prevents race conditions when concurrent processes restore or write to the `.caf/objects/` database.
+- **Binary Serialization:** Handles the packing and unpacking of VCS objects into the fan-out directory structure.
+
+### The Python Engine (Graph & Algorithms)
+The Python layer acts as the brain of the VCS, managing the Directed Acyclic Graph (DAG) and executing structural mutations.
+
+#### 1. The 3-Way Merge Engine
+CAF supports true divergent branch resolution rather than naive overwrites.
+- **LCA Resolution:** Executes a Breadth-First Search (BFS) graph traversal to dynamically discover the Lowest Common Ancestor between two divergent timelines.
+- **Structural Tree Diffing:** Computes the exact delta between the Base, Source, and Target trees entirely in memory before executing any disk operations. It accurately categorizes `Clean Updates`, `Content Conflicts`, `Modify/Delete` collisions, and complex `Type Mutations`.
+- **Memory-Mapped Content Merging:** For text-file collisions, CAF integrates the [merge3](https://github.com/breezy-team/merge3) library. To ensure scalability and prevent `MemoryError` on massive files, the engine implements a custom `LinesSequence` class that uses OS-level memory mapping (`mmap`) to perform byte-level diffing and conflict marker generation (`<<<<<<< HEAD`) without loading the entire file into RAM.
+
+#### 2. Transactional Checkout & State Synchronization
+Checking out historic states requires mutating the live physical disk without destroying locally generated data. `libcaf` implements a highly structured, strict 3-pass checkout engine:
+- **Pre-Flight Assertions:** Validates the working directory against the active `HEAD`, instantly aborting if untracked files are in the blast radius or if tracked files have unsaved modifications.
+- **Pass 1 - Bottom-Up Deletions:** Clears obsolete directories and files starting from the deepest leaves, automatically cleaning up empty parent chains and preventing OS-level `Directory not empty` exceptions.
+- **Pass 2 - Two-Phase Staged Renames:** File moves are processed through a temporary, UUID-based staging directory. This safely unlinks destinations and protects against cyclic or chained renames that would otherwise cause catastrophic data loss.
+- **Pass 3 - Type-Mutating Writes:** Safely extracts blobs and trees from the object database. It aggressively intercepts OS panics caused by structural type mutations (e.g., dynamically destroying a tracked file `a/b` so it can be replaced with a directory `a/b/c`).
+
+#### 3. Hermetic Test Infrastructure
+The entire CLI and core engine are protected by a fully isolated, `pytest`-driven testing harness. Custom deterministic fixtures (`invoke_caf`) guarantee strict sandbox execution, completely eliminating path leakage and environment-specific flakiness, proving mathematically stable behavior across the DAG.
 
 ## 🚀 Quick Start
 
@@ -72,55 +102,51 @@ CAF is built as a hybrid Python/C++ system:
    pytest
    ```
 
-## 💻 Usage
+## 💻 Usage & Command Reference
 
-### Basic Commands
+Once deployed, the caf CLI operates very similarly to standard Git.
 
-Initialize a new repository:
+### Repository Initialization & State
 
 ```bash
-caf init
+caf init                     # Initialize a new .caf object database
+caf status                   # Show working tree status and untracked files
+caf hash_file <path> --write # Cryptographically hash a file and store the blob
+caf delete_repo              # Safely destroy the repository
 ```
 
-Create a commit:
+### History & Branching
 
 ```bash
-caf commit --author "Your Name" --message "Initial commit"
+caf log                      # Traverse and print the DAG commit history
+caf branch                   # List all local branches
+caf add_branch <name>        # Create a new branch at the current HEAD
+caf delete_branch <name>     # Delete an existing branch
 ```
 
-Hash a file and optionally store it:
+### Navigation & Merging
 
 ```bash
-caf hash_file path/to/file.txt --write
+caf checkout <branch|hash>   # Safely sync working directory to a target state
+caf checkout -b <new-branch> # Create and immediately switch to a new branch
+caf diff <commit1> <commit2> # Compute the structural delta between two trees
+caf merge <target>           # Perform a 3-way recursive merge with <target>
+caf merge --abort            # Abort an active merge and restore clean HEAD
 ```
 
-Manage branches:
+### Tagging
 
 ```bash
-caf add_branch feature-branch
-caf delete_branch old-branch
-caf branch                    # List all branches
-caf branch_exists my-branch   # Check if a branch exists
+caf tag <name>               # Create a lightweight tag at the current HEAD
+caf delete_tag <name>        # Remove a tag
+caf tags                     # List all tags in the repository
 ```
 
-View repository history and changes:
+### General
 
 ```bash
-caf log                       # Show commit log
-caf diff commit1 commit2      # Compare two commits
-```
-
-Repository management:
-
-```bash
-caf delete_repo              # Delete the repository
-```
-
-Get help:
-
-```bash
-caf --help
-caf <command> --help
+caf --help                   # Display main help menu
+caf <command> --help         # Display help for a specific command
 ```
 
 ## 🧪 Testing
@@ -132,192 +158,38 @@ The project includes comprehensive tests for both Python and C++ components:
 
 ## 📁 Project Structure
 
-```
-asp-caf-assignment/
-├── Dockerfile                # Development environment setup
-├── Makefile                  # Build and development commands
-├── assignment/               # Assignment source
-├── caf/                      # Python CLI application
-│   ├── pyproject.toml        # Python package configuration
-│   └── caf/                  # CLI source code
-│       ├── __main__.py       # Entry point
-│       ├── cli.py            # Command-line interface
-│       └── cli_commands.py   # Command implementations
-├── libcaf/                   # Core C++ library
-│   ├── CMakeLists.txt        # CMake build configuration
-│   ├── pyproject.toml        # Python package configuration
-│   ├── libcaf/               # Python interface and higher-level repo operations
-│   │   ├── constants.py      # Constants and configuration
-│   │   ├── plumbing.py       # Low-level repo operations
-│   │   ├── ref.py            # Reference handling
-│   │   └── repository.py     # Repository management and high-level API
-│   └── src/                  # C++ source code
-│       ├── bind.cpp          # Python bindings
-│       ├── blob.h            # Blob object definitions
-│       ├── caf.cpp/h         # Low-level C++ implementation
-│       ├── commit.h          # Commit object definitions
-│       ├── hash_types.cpp/h  # Hashing implementations
-│       ├── object_io.cpp/h   # Object I/O operations
-│       ├── tree.h            # Tree object definitions
-│       └── tree_record.h     # Tree record structures
-└── tests/                    # Test suite
-    ├── caf/                  # CLI tests
-    └── libcaf/               # Core library tests
-```
+<details>
+<summary><b>📂 Click to view the full directory tree</b></summary>
 
-## 🔧 Development
-
-### Available Make Targets
-
-- `make build-container` - Build Docker development image
-- `make run` - Start development container
-- `make attach` - Connect to running container
-- `make stop` - Stop running container
-- `make deploy/deploy-libcaf/deploy-caf` - Install libcaf and caf packages, or both
-- `make test` - Run complete test suite (use `ENABLE_COVERAGE=1` to collect coverage information)
-- `make clean` - Remove build artifacts
-
-### Code Quality
-
-The project follows Python and C++ best practices:
-
-- Type hints in Python code
-- Comprehensive test coverage
-- Clear documentation and comments
-- Consistent code formatting
-
-## 🎓 Educational Context
-
-This project is part of the Advanced Systems Programming course (ASP) and serves as a hands-on introduction to:
-
-- **Systems Programming**: Working with multi-language codebases
-- **Version Control Internals**: Understanding how Git-like systems work
-- **Software Architecture**: Designing modular, maintainable systems
-- **Testing and Debugging**: Ensuring code quality and reliability
-- **Build Systems**: Managing complex build processes
-
-Students work through various tasks including:
-
-1. Code analysis and architecture mapping
-2. Environment setup and testing
-3. Debugging and fixing issues
-4. Implementing new features (like tagging systems)
+```text
+caf-engine/
+├── deployment/               # Docker environment setup
+├── Makefile                  # Build and deployment commands
+├── caf/                      # Python CLI Application
+│   ├── pyproject.toml
+│   └── caf/
+│       ├── cli.py            # Argparse and reference routing
+│       └── cli_commands.py   # High-level command execution
+├── libcaf/                   # Core Engine (Hybrid)
+│   ├── CMakeLists.txt
+│   ├── src/                  # C++ Backend (Hashing, Disk I/O)
+│   │   ├── bind.cpp          # pybind11 integration layer
+│   │   ├── object_io.cpp     # Transactional disk writes and locks
+│   │   └── hash_types.cpp    # SHA-1 cryptographic hashing
+│   └── libcaf/               # Python Logic (Graph, Diff, Merge)
+│       ├── repository.py     # Main API and checkout state machine
+│       ├── merge_algo.py     # LCA BFS traversal and 3-way structural diffing
+│       ├── sequences.py      # Memory-mapped (mmap) sequence alignment
+│       └── ref.py            # Advanced symbolic/short-hash resolution
+└── tests/                    # Hermetic Test Suite
+    ├── conftest.py           # Custom pytest fixtures (invoke_caf safety anchor)
+    ├── caf/                  # CLI routing and interface tests
+    └── libcaf/               # Core engine, graph logic, and mutation tests
+```    
+</details>
 
 ## 🤝 Contributors
 
-### Initial Development
-
-- **Meshi, Bar and Omer** - Initial design and implementation (March 2025)
-- **Ido** - Refactoring, cleanup, consistency and beauty pass (June 2025)
-- **You?** - Your work here! (August 2025)
-
-## 📚 Learning Resources
-
-To better understand the concepts behind CAF, consider exploring:
-
-### Version Control & Systems Programming
-
-- [Git Internals](https://git-scm.com/book/en/v2/Git-Internals-Plumbing-and-Porcelain) - Understanding how Git stores
-  and manages data
-- [Content-Addressable Storage](https://en.wikipedia.org/wiki/Content-addressable_storage) - The fundamental concept
-  behind Git and CAF
-- [The Architecture of Open Source Applications - Git](http://aosabook.org/en/git.html) - Deep dive into Git's design
-- [Git Internals - Plumbing and Porcelain (YouTube)](https://www.youtube.com/watch?v=P6jD966jzlk) - Video explanation of
-  Git's internal structure
-- [How Git Works Under the Hood](https://www.freecodecamp.org/news/git-internals-objects-branches-create-repo/) -
-  FreeCodeCamp article on Git internals
-
-### Python Programming
-
-- [Python Tutorial](https://docs.python.org/3/tutorial/) - Official Python tutorial for beginners
-- [Real Python](https://realpython.com/) - Practical Python tutorials and guides
-- [Python C Extensions](https://docs.python.org/3/extending/) - How Python interfaces with C/C++
-- [Python Type Hints](https://docs.python.org/3/library/typing.html) - Modern Python type annotations
-- [Python Tutorial for Beginners (YouTube)](https://www.youtube.com/watch?v=_uQrJ0TkZlc) - 6-hour comprehensive Python
-  course
-- [Python Type Hints Explained (YouTube)](https://www.youtube.com/watch?v=QORvB-_mbZ0) - ArjanCodes type hints tutorial
-- [Automate the Boring Stuff with Python](https://automatetheboringstuff.com/) - Free online book for practical Python
-
-### C++ Programming
-
-- [LearnCpp.com](https://www.learncpp.com/) - Comprehensive C++ tutorial from basics to advanced
-- [C++ Reference](https://cppreference.com/) - Complete C++ language and library reference
-- [Modern C++ Features](https://github.com/AnthonyCalandra/modern-cpp-features) - C++11/14/17/20 features guide
-- [C++ Tutorial for Beginners (YouTube)](https://www.youtube.com/watch?v=vLnPwxZdW4Y) - 4-hour complete C++ course
-- [C++ Weekly (YouTube Channel)](https://www.youtube.com/c/lefticus1) - Short weekly C++ tips and tricks
-- [Back to Basics: RAII and the Rule of Zero (YouTube)](https://www.youtube.com/watch?v=7Qgd9B1KuMQ) - CppCon talk on
-  C++ best practices
-
-### Python-C++ Integration
-
-- [pybind11 Documentation](https://pybind11.readthedocs.io/) - Seamless operability between C++11 and Python
-- [pybind11 Tutorial](https://pybind11.readthedocs.io/en/stable/basics.html) - Getting started with Python bindings
-- [Python and C++ Integration (YouTube)](https://www.youtube.com/watch?v=_5T70cAXDJ0) - Practical pybind11 tutorial
-
-### Core Computer Science Concepts
-
-- [Immutable Objects](https://en.wikipedia.org/wiki/Immutable_object) - Understanding immutability in programming
-- [Hash Functions](https://en.wikipedia.org/wiki/Hash_function) - Cryptographic and non-cryptographic hashing
-- [Merkle Trees](https://en.wikipedia.org/wiki/Merkle_tree) - Tree structures for data integrity (used in Git)
-- [Garbage Collection](https://en.wikipedia.org/wiki/Garbage_collection_(computer_science)) - Automatic memory
-  management
-- [Hash Functions Explained (YouTube)](https://www.youtube.com/watch?v=KqqOXndnvic) - MIT OpenCourseWare on hash
-  functions
-- [Immutable Data Structures (YouTube)](https://www.youtube.com/watch?v=Wo0qiGPSV-s) - Understanding immutability
-  benefits
-
-### Development Tools & Practices
-
-- [Docker Getting Started](https://docs.docker.com/get-started/) - Containerization fundamentals
-- [CMake Tutorial](https://cmake.org/cmake/help/latest/guide/tutorial/) - Build system for C++ projects
-- [pytest Documentation](https://docs.pytest.org/) - Python testing framework
-- [Git Workflow](https://guides.github.com/introduction/flow/) - Collaborative development with Git
-- [Docker Tutorial for Beginners (YouTube)](https://www.youtube.com/watch?v=3c-iBn73dDE) - TechWorld with Nana Docker
-  course
-- [CMake Tutorial (YouTube)](https://www.youtube.com/watch?v=nlKcXPUJGwA) - Complete CMake guide
-- [pytest Tutorial (YouTube)](https://www.youtube.com/watch?v=etosV2IWBF0) - Python testing with pytest
-- [Interactive Git Tutorial](https://learngitbranching.js.org/) - Visual and interactive Git learning
-
-### Systems Programming
-
-- [The Linux Programming Interface](http://man7.org/tlpi/) - Comprehensive systems programming guide
-- [File Systems](https://en.wikipedia.org/wiki/File_system) - How data is stored and organized
-- [Systems Programming Course](https://github.com/angrave/SystemProgramming/wiki) - University of Illinois systems
-  programming wiki
-
-### Advanced Topics
-
-- [Idempotent Operations](https://en.wikipedia.org/wiki/Idempotence) - Operations that can be applied multiple times
-  safely
-- [RAII (Resource Acquisition Is Initialization)](https://en.cppreference.com/w/cpp/language/raii) - C++ resource
-  management pattern
-- [Python Memory Management](https://realpython.com/python-memory-management/) - How Python handles memory allocation
-- [Memory Management in Python (YouTube)](https://www.youtube.com/watch?v=F6u5rhUQ6dU) - mCoding deep dive into Python
-  memory
-- [How Git Works Internally (YouTube)](https://www.youtube.com/watch?v=P6jD966jzlk) - ByteByteGo Git internals
-  explanation
-- [The Cherno C++ Series (YouTube)](https://www.youtube.com/playlist?list=PLlrATfBNZ98dudnM48yfGUldqGD0S4FFb) -
-  Comprehensive modern C++ tutorial series
-- [System Design Concepts (YouTube Channel)](https://www.youtube.com/@ByteByteGo) - ByteByteGo channel for systems
-  concepts
-- [Hussein Nasser (YouTube Channel)](https://www.youtube.com/@hnasr) - Database and systems programming concepts
-
-## 📄 License
-
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-While developed for educational purposes as part of the Advanced Systems Programming course, the code is available under
-MIT License for learning and reference.
-
-## 🐛 Issues and Support
-
-If you encounter issues:
-
-1. Check that Docker is running and up to date
-2. Ensure all dependencies are properly installed
-3. Run the test suite to identify specific problems
-4. Consult the course staff for technical assistance
-
----
-
-*Built with ❤️ for learning systems programming and version control internals*
+Originally based on an academic systems programming architecture, this engine has been heavily expanded to feature robust divergence resolution, memory-mapped I/O, and transactional disk safety.
