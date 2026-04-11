@@ -406,7 +406,7 @@ class Repository:
             for path, blob_hash in self._collect_blob_map(head_commit_hash).items():
                 head_files[path.as_posix()] = blob_hash
 
-        working_files: dict[str, str] = {}
+        working_files: dict[str, HashRef] = {}
         for file_path in self.working_dir.rglob('*'):
             if not file_path.is_file():
                 continue
@@ -415,7 +415,7 @@ class Repository:
             if rel_path.parts and rel_path.parts[0] == self.repo_dir.name:
                 continue
 
-            working_files[rel_path.as_posix()] = hash_file(file_path)
+            working_files[rel_path.as_posix()] = HashRef(hash_file(file_path))
 
         added = sorted(path for path in working_files if path not in head_files)
         deleted = sorted(path for path in head_files if path not in working_files)
