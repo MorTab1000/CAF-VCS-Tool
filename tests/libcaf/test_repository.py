@@ -70,6 +70,21 @@ def test_commit_with_parent(temp_repo: Repository) -> None:
     assert second_commit.parents[0] == first_commit_ref
 
 
+def test_commit_updates_detached_head(temp_repo: Repository) -> None:
+    (temp_repo.working_dir / 'shared.txt').write_text('Line 1\n')
+    base_hash = temp_repo.commit_working_dir('Test Author', 'Base Commit')
+
+    (temp_repo.working_dir / 'shared.txt').write_text('Line 2 - Target\n')
+    temp_repo.commit_working_dir('Test Author', 'Target Commit')
+
+    temp_repo.update_head(base_hash)
+
+    (temp_repo.working_dir / 'shared.txt').write_text('Line 2 - Source\n')
+    detached_hash = temp_repo.commit_working_dir('Test Author', 'Detached Commit')
+
+    assert temp_repo.head_commit() == detached_hash
+
+
 def test_save_dir(temp_repo: Repository) -> None:
     test_dir = temp_repo.working_dir / 'test_dir'
     test_dir.mkdir()
