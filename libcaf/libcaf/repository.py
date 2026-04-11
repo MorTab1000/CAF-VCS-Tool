@@ -703,7 +703,7 @@ class Repository:
                             parent_diff.children.append(modified_diff)
                     else:
                         # TYPE MUTATION (TREE -> BLOB or BLOB -> TREE)
-                        # The entity completely changed structural identity. 
+                        # The entity completely changed structural identity.
                         # Delete the old structure entirely, and add the new one.
                         removed_diff = RemovedDiff(record1, parent_diff, [])
                         added_diff = AddedDiff(record2, parent_diff, [])

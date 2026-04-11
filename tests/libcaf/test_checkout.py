@@ -324,7 +324,7 @@ def test_checkout_aborts_when_untracked_file_blocks_directory(temp_repo: Reposit
     assert temp_repo.head_commit() == commit_ref1
 
 
-def test_checkout_handles_file_directory_mutation(temp_repo) -> None:
+def test_checkout_handles_file_directory_mutation(temp_repo: Repository) -> None:
     data_path = temp_repo.working_dir / 'data'
     data_path.write_text('Just a file')
     file_commit_hash = temp_repo.commit_working_dir('Mor', 'File commit')
@@ -345,7 +345,7 @@ def test_checkout_handles_file_directory_mutation(temp_repo) -> None:
     assert data_path.exists()
     assert data_path.is_file()
     assert data_path.read_text() == 'Just a file'
-    
+
     # And if we go back...
     temp_repo.checkout(folder_commit_hash)
     assert data_path.is_dir()
