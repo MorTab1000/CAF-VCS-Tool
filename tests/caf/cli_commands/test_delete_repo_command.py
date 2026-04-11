@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 from libcaf.repository import Repository
@@ -6,7 +7,7 @@ from pytest import CaptureFixture
 from caf import cli_commands
 
 
-def test_delete_repo_command(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_delete_repo_command(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     assert (temp_repo.working_dir / '.caf').exists()
     assert invoke_caf(cli_commands.delete_repo, temp_repo) == 0
     assert 'Deleted repository' in capsys.readouterr().out

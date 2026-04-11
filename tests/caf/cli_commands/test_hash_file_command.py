@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 from libcaf.constants import DEFAULT_REPO_DIR, OBJECTS_SUBDIR
@@ -9,7 +10,7 @@ from caf import cli_commands
 
 
 def test_hash_file_without_write(temp_repo: Repository, temp_content: tuple[Path, str],
-                                 capsys: CaptureFixture[str], invoke_caf) -> None:
+                                 capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     temp_file, _ = temp_content
     expected_hash = hash_file(temp_file)
 
@@ -18,7 +19,7 @@ def test_hash_file_without_write(temp_repo: Repository, temp_content: tuple[Path
 
 
 def test_hash_file_with_write(temp_repo: Repository, temp_content: tuple[Path, str],
-                              capsys: CaptureFixture[str], invoke_caf) -> None:
+                              capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     temp_file, expected_content = temp_content
     expected_hash = hash_file(temp_file)
 
@@ -43,7 +44,7 @@ def test_hash_file_does_not_exist(temp_repo: Repository, capsys: CaptureFixture[
     assert f'File {non_existent_file} does not exist.' in capsys.readouterr().err
 
 
-def test_hash_file_twice(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_hash_file_twice(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     temp_file = temp_repo.working_dir / 'test_file.txt'
     temp_file.write_text('This is a test file.')
 

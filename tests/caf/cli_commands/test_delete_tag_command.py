@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 from collections.abc import Callable
 from libcaf.constants import DEFAULT_REPO_DIR, TAGS_DIR, REFS_DIR
@@ -6,12 +7,12 @@ from pytest import CaptureFixture
 
 from caf import cli_commands
 
-def _create_initial_commit(repo: Repository, working_dir: Path, author: str, message: str, invoke_caf) -> None:
+def _create_initial_commit(repo: Repository, working_dir: Path, author: str, message: str, invoke_caf: Callable[..., int]) -> None:
     """Helper to ensure the repository has a commit to tag."""
     (working_dir / 'initial_file.txt').write_text('content')
     invoke_caf(cli_commands.commit, repo, author=author, message=message)
 
-def test_delete_tag_command(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_delete_tag_command(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     working_dir = temp_repo.working_dir
     _create_initial_commit(temp_repo, working_dir, 'Tag Author', 'Initial commit', invoke_caf)
     commit_hash = parse_commit_hash()
@@ -31,17 +32,17 @@ def test_delete_tag_no_repo(temp_repo_dir: Path, capsys: CaptureFixture[str]) ->
     assert 'No repository found' in capsys.readouterr().err
 
 
-def test_delete_tag_missing_name(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_delete_tag_missing_name(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     assert invoke_caf(cli_commands.delete_tag, temp_repo, tag_name=None) == -1
     assert 'Tag name is required.' in capsys.readouterr().err
 
 
-def test_delete_tag_does_not_exist(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_delete_tag_does_not_exist(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     assert invoke_caf(cli_commands.delete_tag, temp_repo, tag_name='nonexistent') == -1
     assert 'Tag "nonexistent" does not exist' in capsys.readouterr().err
 
 
-def test_delete_tag_case_mismatch(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_delete_tag_case_mismatch(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     working_dir = temp_repo.working_dir
     _create_initial_commit(temp_repo, working_dir, 'T', 'C', invoke_caf)
     commit_hash = parse_commit_hash()

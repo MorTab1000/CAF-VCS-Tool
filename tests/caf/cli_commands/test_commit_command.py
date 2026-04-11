@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 from libcaf.constants import DEFAULT_REPO_DIR, HEAD_FILE
@@ -7,7 +8,7 @@ from pytest import CaptureFixture
 from caf import cli_commands
 
 
-def test_commit_command(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_commit_command(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     author, message = 'John Doe', 'Initial commit'
 
     temp_file = temp_repo.working_dir / 'test_file.txt'
@@ -33,14 +34,14 @@ def test_commit_no_repo(temp_repo_dir: Path, capsys: CaptureFixture[str]) -> Non
     assert 'No repository found' in capsys.readouterr().err
 
 
-def test_commit_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_commit_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     (temp_repo.working_dir / DEFAULT_REPO_DIR / HEAD_FILE).unlink()
     assert invoke_caf(cli_commands.commit, temp_repo, message='Test commit message') == -1
 
     assert 'Repository error' in capsys.readouterr().err
 
 
-def test_commit_missing_author(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_commit_missing_author(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     temp_file = temp_repo.working_dir / 'test_file.txt'
     temp_file.write_text('Content of test_file')
 
@@ -49,7 +50,7 @@ def test_commit_missing_author(temp_repo: Repository, capsys: CaptureFixture[str
     assert 'Author' in capsys.readouterr().err
 
 
-def test_commit_missing_message(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_commit_missing_message(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     temp_file = temp_repo.working_dir / 'test_file.txt'
     temp_file.write_text('Content of test_file')
 

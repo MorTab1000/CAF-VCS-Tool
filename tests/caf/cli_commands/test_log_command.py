@@ -11,7 +11,7 @@ from pytest import CaptureFixture
 from caf import cli_commands
 
 
-def test_log_command(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_log_command(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     working_dir = temp_repo.working_dir
     temp_file = working_dir / 'log_test.txt'
     temp_file.write_text('First commit content')
@@ -38,7 +38,7 @@ def test_log_no_repo(temp_repo_dir: Path, capsys: CaptureFixture[str]) -> None:
     assert 'No repository found' in capsys.readouterr().err
 
 
-def test_log_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_log_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     working_dir = temp_repo.working_dir
     (working_dir / DEFAULT_REPO_DIR / HEAD_FILE).unlink()
     assert invoke_caf(cli_commands.log, temp_repo) == -1
@@ -46,13 +46,13 @@ def test_log_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], invo
     assert 'Repository error' in capsys.readouterr().err
 
 
-def test_log_no_commits(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_log_no_commits(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     assert invoke_caf(cli_commands.log, temp_repo) == 0
     assert 'No commits in the repository' in capsys.readouterr().out
 
 
 def test_log_prints_merge_indicator_with_short_parent_hashes(temp_repo: Repository,
-                                                             capsys: CaptureFixture[str], invoke_caf) -> None:
+                                                             capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     working_dir = temp_repo.working_dir
     temp_file = working_dir / 'merge_log_test.txt'
     temp_file.write_text('base')

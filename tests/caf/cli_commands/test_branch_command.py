@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 from libcaf.constants import (DEFAULT_BRANCH, DEFAULT_REPO_DIR, HEADS_DIR, HEAD_FILE, REFS_DIR)
@@ -7,7 +8,7 @@ from pytest import CaptureFixture
 from caf import cli_commands
 
 
-def test_branch_command(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_branch_command(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     temp_repo.commit_working_dir('Test Author', 'Initial commit')
     branches = ['branch_1', 'branch_2', 'branch_3', 'branch_4', 'branch_5']
 
@@ -35,14 +36,14 @@ def test_branch_no_repo(temp_repo_dir: Path, capsys: CaptureFixture[str]) -> Non
     assert 'No repository found' in capsys.readouterr().err
 
 
-def test_branch_no_branches(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_branch_no_branches(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     (temp_repo.working_dir / DEFAULT_REPO_DIR / REFS_DIR / HEADS_DIR / DEFAULT_BRANCH).unlink(missing_ok=True)
     assert invoke_caf(cli_commands.branch, temp_repo) == 0
 
     assert 'No branches found' in capsys.readouterr().out
 
 
-def test_branch_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_branch_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
         temp_repo.commit_working_dir('Test Author', 'Initial commit')
         (temp_repo.working_dir / DEFAULT_REPO_DIR / 'HEAD').unlink()
 
@@ -53,7 +54,7 @@ def test_branch_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], i
         assert "HEAD" in stderr  # Ensures it's complaining about the specific corruption
 
 
-def test_branch_shows_current_branch_with_asterisk(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_branch_shows_current_branch_with_asterisk(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     temp_repo.commit_working_dir('Test Author', 'Initial commit')
     invoke_caf(cli_commands.add_branch, temp_repo, branch_name='feature')
     invoke_caf(cli_commands.add_branch, temp_repo, branch_name='develop')

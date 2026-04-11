@@ -9,7 +9,7 @@ from caf import cli_commands
 
 
 def test_diff_added_file(temp_repo: Repository, parse_commit_hash: Callable[[], str],
-                         capsys: CaptureFixture[str], invoke_caf) -> None:
+                         capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     (temp_repo.working_dir / 'file1.txt').write_text('Content of file1')
 
     assert invoke_caf(cli_commands.commit, temp_repo, message='Initial commit') == 0
@@ -26,7 +26,7 @@ def test_diff_added_file(temp_repo: Repository, parse_commit_hash: Callable[[], 
 
 
 def test_diff_modified_file(temp_repo: Repository, parse_commit_hash: Callable[[], str],
-                            capsys: CaptureFixture[str], invoke_caf) -> None:
+                            capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     file1 = temp_repo.working_dir / 'file1.txt'
     file1.write_text('Original content')
 
@@ -43,7 +43,7 @@ def test_diff_modified_file(temp_repo: Repository, parse_commit_hash: Callable[[
 
 
 def test_diff_removed_file(temp_repo: Repository, parse_commit_hash: Callable[[], str],
-                           capsys: CaptureFixture[str], invoke_caf) -> None:
+                           capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     file1 = temp_repo.working_dir / 'file1.txt'
     file1.write_text('Content of file1')
 
@@ -60,7 +60,7 @@ def test_diff_removed_file(temp_repo: Repository, parse_commit_hash: Callable[[]
 
 
 def test_diff_moved_file(temp_repo: Repository, parse_commit_hash: Callable[[], str],
-                         capsys: CaptureFixture[str], invoke_caf) -> None:
+                         capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     file1 = temp_repo.working_dir / 'file1.txt'
     file1.write_text('Content of file1')
 
@@ -78,7 +78,7 @@ def test_diff_moved_file(temp_repo: Repository, parse_commit_hash: Callable[[], 
 
 
 def test_diff_command_compound(temp_repo: Repository, parse_commit_hash: Callable[[], str],
-                               capsys: CaptureFixture[str], invoke_caf) -> None:
+                               capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     file1 = temp_repo.working_dir / 'file1.txt'
     file1.write_text('Version 1')
     file_to_remove = temp_repo.working_dir / 'file_to_remove.txt'
@@ -127,14 +127,14 @@ def test_diff_no_repo(temp_repo_dir: Path, capsys: CaptureFixture[str]) -> None:
     assert 'No repository found' in capsys.readouterr().err
 
 
-def test_diff_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_diff_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     (temp_repo.working_dir / DEFAULT_REPO_DIR / HEAD_FILE).unlink()
     assert invoke_caf(cli_commands.diff, temp_repo, commit1='abc123', commit2='def456') == -1
     
     assert 'Cannot resolve reference abc123' in capsys.readouterr().err
 
 
-def test_diff_missing_parameters(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_diff_missing_parameters(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     assert invoke_caf(cli_commands.diff, temp_repo, commit1=None, commit2='def456') == -1
     assert 'Both commit1 and commit2' in capsys.readouterr().err
 

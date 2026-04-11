@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from libcaf.ref import SymRef
 from libcaf.repository import AmbiguousRefError, Repository
 from caf import cli_commands
@@ -25,7 +27,7 @@ def test_checkout_short_branch_name_attaches_head(temp_repo: Repository) -> None
     assert head_content == 'ref: heads/main'
 
 
-def test_cli_checkout_create_branch_flag(temp_repo: Repository, invoke_caf) -> None:
+def test_cli_checkout_create_branch_flag(temp_repo: Repository, invoke_caf: Callable[..., int]) -> None:
     (temp_repo.working_dir / 'file.txt').write_text('base\n')
     temp_repo.commit_working_dir('QA', 'base')
     
@@ -55,7 +57,7 @@ def test_checkout_commit_hash_detaches_head(temp_repo: Repository) -> None:
     assert head_content == hash_v1
 
 
-def test_checkout_create_branch_on_empty_repo(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_checkout_create_branch_on_empty_repo(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     """Ensure checkout -b works on a brand new repository by swapping the unborn branch reservation."""
     result = invoke_caf(cli_commands.checkout, temp_repo, target_ref='feature', branch=True)
     
@@ -67,7 +69,7 @@ def test_checkout_create_branch_on_empty_repo(temp_repo: Repository, capsys: Cap
     assert "Switched to a new branch 'feature'" in capsys.readouterr().out
 
 
-def test_integration_checkout_unborn_then_commit(temp_repo: Repository, invoke_caf) -> None:
+def test_integration_checkout_unborn_then_commit(temp_repo: Repository, invoke_caf: Callable[..., int]) -> None:
     """Swap unborn branch, then commit to prove the branch file is dynamically generated."""
     # Swap the unborn branch to 'feature'
     invoke_caf(cli_commands.checkout, temp_repo, target_ref='feature', branch=True)
@@ -82,7 +84,7 @@ def test_integration_checkout_unborn_then_commit(temp_repo: Repository, invoke_c
     assert feature_branch_file.read_text().strip() == commit_hash
 
 
-def test_checkout_ambiguous_short_hash_prints_git_style_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_checkout_ambiguous_short_hash_prints_git_style_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     short_hash = 'abcd'
     candidate_1 = 'abcd1234567890abcdef1234567890abcdef1234'
     candidate_2 = 'abcd9999567890abcdef1234567890abcdef1234'

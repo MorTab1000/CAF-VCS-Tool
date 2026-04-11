@@ -1,4 +1,5 @@
 import shutil
+from collections.abc import Callable
 
 import pytest
 from libcaf.plumbing import load_commit
@@ -53,7 +54,7 @@ def _setup_text_conflict_state(temp_repo: Repository) -> tuple[str, str]:
     return ours_hash, theirs_hash
 
 
-def test_merge_missing_target_argument_aborts_with_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_merge_missing_target_argument_aborts_with_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     result = invoke_caf(cli_commands.merge, temp_repo, target_ref=None)
     
     assert result == -1
@@ -62,7 +63,7 @@ def test_merge_missing_target_argument_aborts_with_error(temp_repo: Repository, 
     assert 'required' in err
 
 
-def test_merge_invalid_reference_aborts_gracefully(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_merge_invalid_reference_aborts_gracefully(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     (temp_repo.working_dir / 'seed.txt').write_text('seed\n')
     temp_repo.commit_working_dir('QA', 'seed commit')
 
@@ -74,7 +75,7 @@ def test_merge_invalid_reference_aborts_gracefully(temp_repo: Repository, capsys
     assert 'nonexistent-branch' in err or 'not found' in err
 
 
-def test_merge_clean_merge_outputs_hash_and_updates_workspace(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_merge_clean_merge_outputs_hash_and_updates_workspace(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     _set_working_tree_files(temp_repo, {'file_a.txt': 'base a\n', 'file_b.txt': 'base b\n'})
     base_hash = temp_repo.commit_working_dir('QA', 'base')
 
@@ -101,7 +102,7 @@ def test_merge_clean_merge_outputs_hash_and_updates_workspace(temp_repo: Reposit
     assert (temp_repo.working_dir / 'file_b.txt').read_text() == 'feature changed b\n'
 
 
-def test_merge_content_conflict_writes_merge_head(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_merge_content_conflict_writes_merge_head(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     _set_working_tree_files(temp_repo, {'conflict.txt': 'base\n'})
     base_hash = temp_repo.commit_working_dir('QA', 'base')
 
@@ -130,7 +131,7 @@ def test_merge_content_conflict_writes_merge_head(temp_repo: Repository, capsys:
     assert merge_head.read_text().strip() == str(source_hash)
 
 
-def test_commit_blocked_when_unresolved_conflict_markers_exist(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_commit_blocked_when_unresolved_conflict_markers_exist(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     old_head, _ = _setup_text_conflict_state(temp_repo)
     conflicted_file = temp_repo.working_dir / 'conflict.txt'
     
@@ -144,7 +145,7 @@ def test_commit_blocked_when_unresolved_conflict_markers_exist(temp_repo: Reposi
     assert temp_repo.head_commit() == old_head
 
 
-def test_commit_after_resolving_conflicts_creates_two_parent_commit(temp_repo: Repository, invoke_caf) -> None:
+def test_commit_after_resolving_conflicts_creates_two_parent_commit(temp_repo: Repository, invoke_caf: Callable[..., int]) -> None:
     old_head, theirs_hash = _setup_text_conflict_state(temp_repo)
     merge_head_file = temp_repo.merge_head_file()
     assert merge_head_file.exists()
@@ -166,7 +167,7 @@ def test_commit_after_resolving_conflicts_creates_two_parent_commit(temp_repo: R
     assert not merge_head_file.exists()
 
 
-def test_merge_with_commit_hash_succeeds(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_merge_with_commit_hash_succeeds(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     _set_working_tree_files(temp_repo, {'file_a.txt': 'base\n'})
     base_hash = temp_repo.commit_working_dir('QA', 'base')
 
@@ -187,7 +188,7 @@ def test_merge_with_commit_hash_succeeds(temp_repo: Repository, capsys: CaptureF
     assert 'fast-forward' in capsys.readouterr().out.lower()
 
 
-def test_merge_with_tag_succeeds(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_merge_with_tag_succeeds(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     _set_working_tree_files(temp_repo, {'file_a.txt': 'base\n'})
     base_hash = temp_repo.commit_working_dir('QA', 'base')
 
@@ -210,7 +211,7 @@ def test_merge_with_tag_succeeds(temp_repo: Repository, capsys: CaptureFixture[s
     assert 'fast-forward' in capsys.readouterr().out.lower()
 
 
-def test_merge_in_detached_head_fast_forwards_correctly(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_merge_in_detached_head_fast_forwards_correctly(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     _set_working_tree_files(temp_repo, {'file_a.txt': 'base\n'})
     base_hash = temp_repo.commit_working_dir('QA', 'base')
 
@@ -245,7 +246,7 @@ def test_merge_in_detached_head_fast_forwards_correctly(temp_repo: Repository, c
     assert (temp_repo.working_dir / 'file_a.txt').read_text() == 'feature change\n'
 
 
-def test_merge_with_conflicts_and_clean_updates_saves_clean_files(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_merge_with_conflicts_and_clean_updates_saves_clean_files(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     """
     Simulates a realistic merge where some files auto-merge/clean-update, and others conflict.
     Verifies that clean updates are NOT lost when the CLI halts for conflict resolution.
@@ -301,7 +302,7 @@ def test_merge_with_conflicts_and_clean_updates_saves_clean_files(temp_repo: Rep
         pytest.fail(f"Gatekeeper incorrectly blocked the commit after resolution! Error: {e}")
 
 
-def test_merge_cli_abort_success(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_merge_cli_abort_success(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     (temp_repo.working_dir / 'init.txt').write_text('init\n')
     temp_repo.commit_working_dir('Author', 'Base commit')
 
@@ -315,7 +316,7 @@ def test_merge_cli_abort_success(temp_repo: Repository, capsys: CaptureFixture[s
     assert 'Merge aborted successfully' in captured.out
 
 
-def test_merge_cli_abort_fails_clean_repo(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+def test_merge_cli_abort_fails_clean_repo(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf: Callable[..., int]) -> None:
     result = invoke_caf(cli_commands.merge, temp_repo, abort=True)
 
     assert result == -1
@@ -323,7 +324,7 @@ def test_merge_cli_abort_fails_clean_repo(temp_repo: Repository, capsys: Capture
     assert 'No merge in progress' in (captured.out + captured.err)
 
 
-def test_cli_merge_resolves_branches_and_short_hashes(temp_repo: Repository, invoke_caf) -> None:
+def test_cli_merge_resolves_branches_and_short_hashes(temp_repo: Repository, invoke_caf: Callable[..., int]) -> None:
     # 1. Base Commit
     (temp_repo.working_dir / 'base.txt').write_text('Base Line')
     base_hash = temp_repo.commit_working_dir('Mor', 'Base commit')
