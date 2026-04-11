@@ -823,7 +823,26 @@ class Repository:
             abs_path = self.working_dir / path
             if abs_path.exists():
                 if abs_path.is_dir():
-                    continue
+                    abs_path = self.working_dir / path
+            if abs_path.exists():
+                if abs_path.is_dir():
+                    # Only bypass if the directory contains ZERO untracked files.
+                    safe_to_delete = True
+                    for child in abs_path.rglob('*'):
+                        if not child.is_file():
+                            continue
+                        # Ignore the internal .caf folder just in case
+                        if self.repo_dir.name in child.parts:
+                            continue
+                            
+                        rel_child = child.relative_to(self.working_dir)
+                        if rel_child not in current_blob_map:
+                            safe_to_delete = False
+                            break # Found an untracked file, abort inspection.
+                            
+                    if safe_to_delete:
+                        continue
+                
                 raise RepositoryError(f'Checkout aborted: untracked path in the way: {path}')
 
     def _apply_pass1_deletions(self, flattened_diffs: Sequence[tuple[Diff, Path]]) -> None:
@@ -1008,7 +1027,7 @@ class Repository:
             else:
                 # It's a tag or a raw commit hash: Detach HEAD
                 self.update_head(HashRef(target_hash))
-        except (AmbiguousRefError, RefError):
+        except (AmbiguousRefError, RefError, RepositoryError):
             raise
         except Exception as e:
             raise RepositoryError(f"Failed to checkout '{target_ref}'") from e
