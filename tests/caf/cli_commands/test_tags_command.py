@@ -6,22 +6,22 @@ from pytest import CaptureFixture
 
 from caf import cli_commands
 
-def _create_initial_commit(repo: Repository, working_dir: Path, author: str, message: str) -> None:
+def _create_initial_commit(repo: Repository, working_dir: Path, author: str, message: str, invoke_caf) -> None:
     """Helper to ensure the repository has a commit to tag."""
     (working_dir / 'initial_file.txt').write_text('content')
-    cli_commands.commit(working_dir_path=working_dir, author=author, message=message)
+    invoke_caf(cli_commands.commit, repo, author=author, message=message)
 
-def test_tags_command_list(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str]) -> None:
+def test_tags_command_list(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str], invoke_caf) -> None:
     working_dir = temp_repo.working_dir
-    _create_initial_commit(temp_repo, working_dir, 'Tag Author', 'Initial commit')
+    _create_initial_commit(temp_repo, working_dir, 'Tag Author', 'Initial commit', invoke_caf)
     commit_hash = parse_commit_hash()
 
-    cli_commands.create_tag(working_dir_path=working_dir, tag_name='beta', commit_hash=commit_hash)
-    cli_commands.create_tag(working_dir_path=working_dir, tag_name='alpha', commit_hash=commit_hash)
+    invoke_caf(cli_commands.create_tag, temp_repo, tag_name='beta', commit_hash=commit_hash)
+    invoke_caf(cli_commands.create_tag, temp_repo, tag_name='alpha', commit_hash=commit_hash)
     
     capsys.readouterr() # Clear the buffer
 
-    assert cli_commands.tags(working_dir_path=working_dir) == 0
+    assert invoke_caf(cli_commands.tags, temp_repo) == 0
 
     output = capsys.readouterr().out
     assert 'Tags:' in output
@@ -32,17 +32,17 @@ def test_tags_command_list(temp_repo: Repository, parse_commit_hash: Callable[[]
     assert tag_lines == ['alpha', 'beta'], "Tags should be listed in alphabetical order"
 
 
-def test_tags_case_sensitivity(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str]) -> None:
+def test_tags_case_sensitivity(temp_repo: Repository, parse_commit_hash: Callable[[], str], capsys: CaptureFixture[str], invoke_caf) -> None:
     working_dir = temp_repo.working_dir
-    _create_initial_commit(temp_repo, working_dir, 'T', 'C')
+    _create_initial_commit(temp_repo, working_dir, 'T', 'C', invoke_caf)
     commit_hash = parse_commit_hash()
 
-    cli_commands.create_tag(working_dir_path=working_dir, tag_name='TagA', commit_hash=commit_hash)
-    cli_commands.create_tag(working_dir_path=working_dir, tag_name='taga', commit_hash=commit_hash)
+    invoke_caf(cli_commands.create_tag, temp_repo, tag_name='TagA', commit_hash=commit_hash)
+    invoke_caf(cli_commands.create_tag, temp_repo, tag_name='taga', commit_hash=commit_hash)
     
     capsys.readouterr() 
 
-    assert cli_commands.tags(working_dir_path=working_dir) == 0
+    assert invoke_caf(cli_commands.tags, temp_repo) == 0
     output = capsys.readouterr().out
     
     lines = output.splitlines()
@@ -56,6 +56,6 @@ def test_tags_no_repo(temp_repo_dir: Path, capsys: CaptureFixture[str]) -> None:
     assert 'No repository found' in capsys.readouterr().err
 
 
-def test_tags_no_tags_exist(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
-    assert cli_commands.tags(working_dir_path=temp_repo.working_dir) == 0
+def test_tags_no_tags_exist(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
+    assert invoke_caf(cli_commands.tags, temp_repo) == 0
     assert 'No tags found.' in capsys.readouterr().out

@@ -25,15 +25,11 @@ def test_checkout_short_branch_name_attaches_head(temp_repo: Repository) -> None
     assert head_content == 'ref: heads/main'
 
 
-def test_cli_checkout_create_branch_flag(temp_repo: Repository) -> None:
+def test_cli_checkout_create_branch_flag(temp_repo: Repository, invoke_caf) -> None:
     (temp_repo.working_dir / 'file.txt').write_text('base\n')
     temp_repo.commit_working_dir('QA', 'base')
     
-    result = cli_commands.checkout(
-        working_dir_path=str(temp_repo.working_dir),
-        target_ref='my-feature',
-        branch=True
-    )
+    result = invoke_caf(cli_commands.checkout, temp_repo, target_ref='my-feature', branch=True)
     
     assert result == 0
     assert temp_repo.branch_exists(SymRef('my-feature'))
@@ -59,9 +55,9 @@ def test_checkout_commit_hash_detaches_head(temp_repo: Repository) -> None:
     assert head_content == hash_v1
 
 
-def test_checkout_create_branch_on_empty_repo(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_checkout_create_branch_on_empty_repo(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
     """Ensure checkout -b works on a brand new repository by swapping the unborn branch reservation."""
-    result = cli_commands.checkout(working_dir_path=temp_repo.working_dir, target_ref='feature', branch=True)
+    result = invoke_caf(cli_commands.checkout, temp_repo, target_ref='feature', branch=True)
     
     assert result == 0
 
@@ -71,10 +67,10 @@ def test_checkout_create_branch_on_empty_repo(temp_repo: Repository, capsys: Cap
     assert "Switched to a new branch 'feature'" in capsys.readouterr().out
 
 
-def test_integration_checkout_unborn_then_commit(temp_repo: Repository) -> None:
+def test_integration_checkout_unborn_then_commit(temp_repo: Repository, invoke_caf) -> None:
     """Swap unborn branch, then commit to prove the branch file is dynamically generated."""
     # Swap the unborn branch to 'feature'
-    cli_commands.checkout(working_dir_path=temp_repo.working_dir, target_ref='feature', branch=True)
+    invoke_caf(cli_commands.checkout, temp_repo, target_ref='feature', branch=True)
     
     # Create a file and make the very first commit
     (temp_repo.working_dir / 'test.txt').write_text('Hello World\n')
@@ -86,7 +82,7 @@ def test_integration_checkout_unborn_then_commit(temp_repo: Repository) -> None:
     assert feature_branch_file.read_text().strip() == commit_hash
 
 
-def test_checkout_ambiguous_short_hash_prints_git_style_error(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_checkout_ambiguous_short_hash_prints_git_style_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
     short_hash = 'abcd'
     candidate_1 = 'abcd1234567890abcdef1234567890abcdef1234'
     candidate_2 = 'abcd9999567890abcdef1234567890abcdef1234'
@@ -96,10 +92,7 @@ def test_checkout_ambiguous_short_hash_prints_git_style_error(temp_repo: Reposit
         commit_path.parent.mkdir(parents=True, exist_ok=True)
         commit_path.write_text('dummy')
 
-    result = cli_commands.checkout(
-        working_dir_path=str(temp_repo.working_dir),
-        target_ref=short_hash,
-    )
+    result = invoke_caf(cli_commands.checkout, temp_repo, target_ref=short_hash)
 
     assert result == -1
     

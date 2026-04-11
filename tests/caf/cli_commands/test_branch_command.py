@@ -7,16 +7,16 @@ from pytest import CaptureFixture
 from caf import cli_commands
 
 
-def test_branch_command(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_branch_command(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
     temp_repo.commit_working_dir('Test Author', 'Initial commit')
     branches = ['branch_1', 'branch_2', 'branch_3', 'branch_4', 'branch_5']
 
     for branch in branches:
-        cli_commands.add_branch(working_dir_path=temp_repo.working_dir, branch_name=branch)
+        invoke_caf(cli_commands.add_branch, temp_repo, branch_name=branch)
 
     capsys.readouterr()
 
-    assert cli_commands.branch(working_dir_path=temp_repo.working_dir) == 0
+    assert invoke_caf(cli_commands.branch, temp_repo) == 0
 
     branch_names: list[str] = []
     lines = capsys.readouterr().out.splitlines()
@@ -35,32 +35,32 @@ def test_branch_no_repo(temp_repo_dir: Path, capsys: CaptureFixture[str]) -> Non
     assert 'No repository found' in capsys.readouterr().err
 
 
-def test_branch_no_branches(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_branch_no_branches(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
     (temp_repo.working_dir / DEFAULT_REPO_DIR / REFS_DIR / HEADS_DIR / DEFAULT_BRANCH).unlink(missing_ok=True)
-    assert cli_commands.branch(working_dir_path=temp_repo.working_dir) == 0
+    assert invoke_caf(cli_commands.branch, temp_repo) == 0
 
     assert 'No branches found' in capsys.readouterr().out
 
 
-def test_branch_repo_error(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_branch_repo_error(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
         temp_repo.commit_working_dir('Test Author', 'Initial commit')
         (temp_repo.working_dir / DEFAULT_REPO_DIR / 'HEAD').unlink()
 
-        assert cli_commands.branch(working_dir_path=temp_repo.working_dir) == -1
+        assert invoke_caf(cli_commands.branch, temp_repo) == -1
         stderr = capsys.readouterr().err
         
         assert "Error" in stderr
         assert "HEAD" in stderr  # Ensures it's complaining about the specific corruption
 
 
-def test_branch_shows_current_branch_with_asterisk(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_branch_shows_current_branch_with_asterisk(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
     temp_repo.commit_working_dir('Test Author', 'Initial commit')
-    cli_commands.add_branch(working_dir_path=temp_repo.working_dir, branch_name='feature')
-    cli_commands.add_branch(working_dir_path=temp_repo.working_dir, branch_name='develop')
+    invoke_caf(cli_commands.add_branch, temp_repo, branch_name='feature')
+    invoke_caf(cli_commands.add_branch, temp_repo, branch_name='develop')
 
     capsys.readouterr()
 
-    assert cli_commands.branch(working_dir_path=temp_repo.working_dir) == 0
+    assert invoke_caf(cli_commands.branch, temp_repo) == 0
 
     output = capsys.readouterr().out
     lines = output.splitlines()

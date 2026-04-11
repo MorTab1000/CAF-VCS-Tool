@@ -9,24 +9,20 @@ from caf import cli_commands
 
 
 def test_hash_file_without_write(temp_repo: Repository, temp_content: tuple[Path, str],
-                                 capsys: CaptureFixture[str]) -> None:
+                                 capsys: CaptureFixture[str], invoke_caf) -> None:
     temp_file, _ = temp_content
     expected_hash = hash_file(temp_file)
 
-    assert cli_commands.hash_file(path=temp_file,
-                                  working_dir_path=temp_repo.working_dir,
-                                  write=False) == 0
+    assert invoke_caf(cli_commands.hash_file, temp_repo, path=temp_file, write=False) == 0
     assert f'Hash: {expected_hash}' in capsys.readouterr().out
 
 
 def test_hash_file_with_write(temp_repo: Repository, temp_content: tuple[Path, str],
-                              capsys: CaptureFixture[str]) -> None:
+                              capsys: CaptureFixture[str], invoke_caf) -> None:
     temp_file, expected_content = temp_content
     expected_hash = hash_file(temp_file)
 
-    assert cli_commands.hash_file(path=temp_file,
-                                  working_dir_path=temp_repo.working_dir,
-                                  write=True) == 0
+    assert invoke_caf(cli_commands.hash_file, temp_repo, path=temp_file, write=True) == 0
 
     output = capsys.readouterr().out
     assert f'Hash: {expected_hash}' in output
@@ -47,16 +43,12 @@ def test_hash_file_does_not_exist(temp_repo: Repository, capsys: CaptureFixture[
     assert f'File {non_existent_file} does not exist.' in capsys.readouterr().err
 
 
-def test_hash_file_twice(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_hash_file_twice(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
     temp_file = temp_repo.working_dir / 'test_file.txt'
     temp_file.write_text('This is a test file.')
 
-    assert cli_commands.hash_file(path=temp_file,
-                                  working_dir_path=temp_repo.working_dir,
-                                  write=True) == 0
-    assert cli_commands.hash_file(path=temp_file,
-                                  working_dir_path=temp_repo.working_dir,
-                                  write=True) == 0
+    assert invoke_caf(cli_commands.hash_file, temp_repo, path=temp_file, write=True) == 0
+    assert invoke_caf(cli_commands.hash_file, temp_repo, path=temp_file, write=True) == 0
 
     assert 'Hash: ' in capsys.readouterr().out
 

@@ -6,13 +6,13 @@ from pytest import CaptureFixture
 from caf import cli_commands
 
 
-def test_delete_repo_command(temp_repo: Repository, capsys: CaptureFixture[str]) -> None:
+def test_delete_repo_command(temp_repo: Repository, capsys: CaptureFixture[str], invoke_caf) -> None:
     assert (temp_repo.working_dir / '.caf').exists()
-    assert cli_commands.delete_repo(working_dir_path=temp_repo.working_dir) == 0
+    assert invoke_caf(cli_commands.delete_repo, temp_repo) == 0
     assert 'Deleted repository' in capsys.readouterr().out
 
     assert not (temp_repo.working_dir / '.caf').exists()
-    assert cli_commands.delete_repo(working_dir_path=temp_repo.working_dir) == -1
+    assert invoke_caf(cli_commands.delete_repo, temp_repo) == -1
     assert 'No repository found' in capsys.readouterr().err
 
 

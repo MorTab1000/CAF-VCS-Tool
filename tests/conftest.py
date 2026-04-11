@@ -11,6 +11,23 @@ def _random_string(length: int) -> str:
 
 
 @fixture
+def invoke_caf():
+    """
+    Fixture that returns a function to wrap CLI commands, ensuring they are always anchored 
+    to the test sandbox.
+    """
+    def _invoke_caf(cmd_func, temp_repo, **kwargs):
+        safe_kwargs = {
+            'working_dir_path': str(temp_repo.working_dir),
+            'repo_dir': str(temp_repo.repo_dir),
+            'author': 'TestBot', # Standardize author for tests
+            **kwargs
+        }
+        return cmd_func(**safe_kwargs)
+    return _invoke_caf
+
+
+@fixture
 def temp_repo_dir(tmp_path_factory: TempPathFactory) -> Path:
     return tmp_path_factory.mktemp('test_repo', numbered=True)
 
