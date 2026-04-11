@@ -507,8 +507,11 @@ def merge(**kwargs) -> int:
                 _print_success('\nPlease resolve the text markers, delete any backup files (~HEAD), and run "caf commit".')
                 return -1
     
-    except (RefError, AmbiguousRefError, OSError) as e:
+    except (RefError, AmbiguousRefError) as e:
         _print_error(f'Could not resolve branch, tag, or commit reference: {raw_target}\n{e}')
+        return -1
+    except OSError as e:
+        _print_error(f'Filesystem error during merge operation: {e}')
         return -1
     except RepositoryNotFoundError:
         _print_error(f'No repository found at {repo.repo_path()}')
