@@ -545,6 +545,8 @@ class Repository:
             else:
                 # Standard commit on an existing branch
                 self.update_ref(branch, commit_ref)
+        else:  # Detached HEAD commit - just update HEAD to point to the new commit hash
+            self.update_head(commit_ref)
 
         # clean up merge state
         if merge_head_file.exists():
