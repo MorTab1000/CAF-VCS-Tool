@@ -453,12 +453,18 @@ def merge(**kwargs) -> int:
                     target_hash = possible_hash
                     target_ref = candidate if isinstance(candidate, SymRef) else possible_hash
                     break 
-            except (RefError, AmbiguousRefError, OSError):
+                    
+            except AmbiguousRefError as e:
+                _print_error(f"Error: Short hash '{raw_target}' is ambiguous.")
+                
+                if hasattr(e, 'candidates'):
+                    for conflict in e.candidates:
+                        _print_error(f"  - {conflict}")
+                        
+                return -1
+                
+            except (RefError, OSError):
                 continue
-
-        if not target_hash or not target_ref:
-            _print_error(f'Could not resolve branch, tag, or commit reference: {raw_target}')
-            return -1
 
         current_head = repo.head_ref()
         merge_report = repo.merge(current_head, target_ref, author)
