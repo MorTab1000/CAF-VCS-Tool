@@ -685,21 +685,31 @@ class Repository:
                         continue
 
                     # If the record is a tree, we need to recursively compare the trees
-                    if record1.type == TreeRecordType.TREE and record2.type == TreeRecordType.TREE:
-                        subtree_diff = ModifiedDiff(record1, parent_diff, [])
+                    if record1.type == record2.type:
+                        if record1.type == TreeRecordType.TREE:
+                            subtree_diff = ModifiedDiff(record1, parent_diff, [])
+                            try:
+                                tree1 = load_tree(self.objects_dir(), record1.hash)
+                                tree2 = load_tree(self.objects_dir(), record2.hash)
+                            except Exception as e:
+                                msg = 'Error loading subtree for diff'
+                                raise RepositoryError(msg) from e
 
-                        try:
-                            tree1 = load_tree(self.objects_dir(), record1.hash)
-                            tree2 = load_tree(self.objects_dir(), record2.hash)
-                        except Exception as e:
-                            msg = 'Error loading subtree for diff'
-                            raise RepositoryError(msg) from e
-
-                        stack.append((tree1, tree2, subtree_diff))
-                        parent_diff.children.append(subtree_diff)
+                            stack.append((tree1, tree2, subtree_diff))
+                            parent_diff.children.append(subtree_diff)
+                        else:
+                            # Both are BLOBs (Standard file modification)
+                            modified_diff = ModifiedDiff(record1, parent_diff, [])
+                            parent_diff.children.append(modified_diff)
                     else:
-                        modified_diff = ModifiedDiff(record1, parent_diff, [])
-                        parent_diff.children.append(modified_diff)
+                        # TYPE MUTATION (TREE -> BLOB or BLOB -> TREE)
+                        # The entity completely changed structural identity.
+                        # Delete the old structure entirely, and add the new one.
+                        removed_diff = RemovedDiff(record1, parent_diff, [])
+                        added_diff = AddedDiff(record2, parent_diff, [])
+                        
+                        parent_diff.children.append(removed_diff)
+                        parent_diff.children.append(added_diff)
 
             for name, record2 in records2.items():
                 if name not in records1:
@@ -812,6 +822,27 @@ class Repository:
 
             abs_path = self.working_dir / path
             if abs_path.exists():
+                if abs_path.is_dir():
+                    abs_path = self.working_dir / path
+            if abs_path.exists():
+                if abs_path.is_dir():
+                    # Only bypass if the directory contains ZERO untracked files.
+                    safe_to_delete = True
+                    for child in abs_path.rglob('*'):
+                        if not child.is_file():
+                            continue
+                        # Ignore the internal .caf folder just in case
+                        if self.repo_dir.name in child.parts:
+                            continue
+                            
+                        rel_child = child.relative_to(self.working_dir)
+                        if rel_child not in current_blob_map:
+                            safe_to_delete = False
+                            break # Found an untracked file, abort inspection.
+                            
+                    if safe_to_delete:
+                        continue
+                
                 raise RepositoryError(f'Checkout aborted: untracked path in the way: {path}')
 
     def _apply_pass1_deletions(self, flattened_diffs: Sequence[tuple[Diff, Path]]) -> None:
@@ -888,31 +919,52 @@ class Repository:
         """Apply write pass for additions and modifications by restoring blobs and trees from the object database."""
         for diff, rel_path in flattened_diffs:
             abs_path = self.working_dir / rel_path
+
+            # If we need to write to 'a/b/c', but 'a/b' is currently a file, 
+            # the OS will panic. We must obliterate the file first.
+            for parent in abs_path.parents:
+                if parent == self.working_dir:
+                    break
+                if parent.exists() and parent.is_file():
+                    parent.unlink()
+
             if isinstance(diff, AddedDiff):
                 if diff.record.type == TreeRecordType.TREE:
+                    # Target is a tree. If a file is in the way, destroy it.
+                    if abs_path.exists() and abs_path.is_file():
+                        abs_path.unlink()
                     extract_tree_to_disk(self.objects_dir(), diff.record.hash, abs_path)
                 else:
                     blob_hash = target_blob_map.get(rel_path)
                     if blob_hash is None:
                         continue
-
-                    if abs_path.exists() and abs_path.is_dir():
-                        shutil.rmtree(abs_path)
+                    
+                    # Target is a blob. If a directory is in the way, destroy it.
+                    if abs_path.exists():
+                        if abs_path.is_dir():
+                            shutil.rmtree(abs_path)
+                        else:
+                            abs_path.unlink()
 
                     restore_blob_to_path(self.objects_dir(), blob_hash, abs_path)
 
-            elif isinstance(diff, ModifiedDiff) and diff.record.type == TreeRecordType.BLOB:
-                blob_hash = target_blob_map.get(rel_path)
-                if blob_hash is None:
-                    continue
+            elif isinstance(diff, ModifiedDiff):
+                if diff.record.type == TreeRecordType.TREE:
+                    # The child diffs in the flattened list will handle internal file changes.
+                    abs_path.mkdir(parents=True, exist_ok=True)
+                else:
+                    blob_hash = target_blob_map.get(rel_path)
+                    if blob_hash is None:
+                        continue
+                    
+                    # Target is a blob. Destroy whatever is currently in the way.
+                    if abs_path.exists():
+                        if abs_path.is_dir():
+                            shutil.rmtree(abs_path)
+                        else:
+                            abs_path.unlink()
 
-                if abs_path.exists():
-                    if abs_path.is_dir():
-                        shutil.rmtree(abs_path)
-                    else:
-                        abs_path.unlink()
-
-                restore_blob_to_path(self.objects_dir(), blob_hash, abs_path)
+                    restore_blob_to_path(self.objects_dir(), blob_hash, abs_path)
     
     @requires_repo
     def sync_working_dir_to_commit(self, target_hash: str) -> None:
@@ -975,7 +1027,7 @@ class Repository:
             else:
                 # It's a tag or a raw commit hash: Detach HEAD
                 self.update_head(HashRef(target_hash))
-        except (AmbiguousRefError, RefError):
+        except (AmbiguousRefError, RefError, RepositoryError):
             raise
         except Exception as e:
             raise RepositoryError(f"Failed to checkout '{target_ref}'") from e
