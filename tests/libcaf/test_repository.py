@@ -429,3 +429,39 @@ def test_head_commit_with_symbolic_ref_returns_hash_ref(temp_repo: Repository) -
     temp_repo.update_ref('heads/main', commit_ref)
 
     assert temp_repo.head_commit() == commit_ref
+
+
+def test_get_status_on_unborn_branch(temp_repo: Repository) -> None:
+    status = temp_repo.get_status()
+
+    assert status['branch'] == DEFAULT_BRANCH
+    assert status['added'] == []
+    assert status['modified'] == []
+    assert status['deleted'] == []
+
+
+def test_get_status_detects_changes(temp_repo: Repository) -> None:
+    to_modify = temp_repo.working_dir / 'to_modify.txt'
+    to_delete = temp_repo.working_dir / 'to_delete.txt'
+    
+    to_modify.write_text('before\n')
+    to_delete.write_text('delete me\n')
+    
+    temp_repo.commit_working_dir('Status Tester', 'Track baseline files')
+    
+    to_modify.write_text('after\n')
+    to_delete.unlink()
+    (temp_repo.working_dir / 'added.txt').write_text('new file\n')
+    
+    status = temp_repo.get_status()
+    
+    assert status['branch'] == DEFAULT_BRANCH
+    assert status['added'] == ['added.txt']
+    assert status['modified'] == ['to_modify.txt']
+    assert status['deleted'] == ['to_delete.txt']
+
+
+def test_get_status_ignores_dot_caf_directory(temp_repo: Repository) -> None:
+    status = temp_repo.get_status()
+    
+    assert not any(temp_repo.repo_path().name in path for path in status['added'])

@@ -129,6 +129,14 @@ def cli() -> None:
             'help': '📚 List all branches',
         },
 
+        'status': {
+            'func': cli_commands.status,
+            'args': {
+                **_repo_args,
+            },
+            'help': '📋 Show working tree status',
+        },
+
         'log': {
             'func': cli_commands.log,
             'args': {
