@@ -433,20 +433,15 @@ def merge(**kwargs) -> int:
         return -1
         
     try:
-        is_hex = MIN_HASH_LENGTH <= len(raw_target) <= HASH_LENGTH and all(c in HASH_CHARSET for c in raw_target.lower())
-
-        # Build a list of candidates to try resolving
+        # Build the exact list of candidates
         candidates = []
         if raw_target.startswith('heads/') or raw_target.startswith('tags/'):
             candidates.append(SymRef(raw_target))
         else:
-            # Try it as a branch
             candidates.append(SymRef(f'heads/{raw_target}'))
-            # Try it as a tag
             candidates.append(SymRef(f'tags/{raw_target}'))
-            # Try it as a raw hash (short or long)
-            if is_hex:
-                candidates.append(raw_target)
+            # Append the raw string so the engine can trigger the short-hash logic!
+            candidates.append(raw_target)
 
         target_ref = None
         target_hash = None
@@ -456,7 +451,6 @@ def merge(**kwargs) -> int:
                 possible_hash = repo.resolve_ref(candidate)
                 if possible_hash:
                     target_hash = possible_hash
-                    # If it was a SymRef, use that. If it was the raw hex string, use the resolved HashRef.
                     target_ref = candidate if isinstance(candidate, SymRef) else possible_hash
                     break 
             except (RefError, AmbiguousRefError, OSError):
@@ -489,7 +483,7 @@ def merge(**kwargs) -> int:
                 if isinstance(current_head, SymRef):
                     repo.update_ref(current_head, merge_report.commit_hash)
                 else:
-                    # Detached HEAD fix: advance the HEAD pointer directly
+                    # Detached HEAD: advance the HEAD pointer directly
                     repo.update_head(HashRef(merge_report.commit_hash))
                 _print_success(f'Merge completed with a new merge commit. Current branch now points to {merge_report.commit_hash}.')
                 return 0
