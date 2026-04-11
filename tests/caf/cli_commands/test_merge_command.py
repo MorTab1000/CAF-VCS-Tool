@@ -6,6 +6,7 @@ from libcaf.repository import Repository
 from pytest import CaptureFixture
 from libcaf.ref import SymRef, HashRef
 from caf import cli_commands
+from libcaf.constants import SHORT_HASH_LENGTH
 
 
 def _set_working_tree_files(temp_repo: Repository, files: dict[str, str]) -> None:
@@ -354,3 +355,38 @@ def test_merge_cli_abort_fails_clean_repo(temp_repo: Repository, capsys: Capture
     assert result == -1
     captured = capsys.readouterr()
     assert 'No merge in progress' in (captured.out + captured.err)
+
+
+def test_cli_merge_resolves_branches_and_short_hashes(temp_repo: Repository) -> None:
+    # 1. Base Commit
+    (temp_repo.working_dir / 'base.txt').write_text('Base Line')
+    base_hash = temp_repo.commit_working_dir('Mor', 'Base commit')
+    
+    # 2. Feature Branch
+    temp_repo.add_branch('feature')
+    temp_repo.checkout('heads/feature')
+    (temp_repo.working_dir / 'feature.txt').write_text('Feature Line')
+    temp_repo.commit_working_dir('Mor', 'Feature commit')
+    
+    # 3. Main Branch
+    temp_repo.checkout('heads/main')
+    (temp_repo.working_dir / 'main.txt').write_text('Main Line')
+    main_hash = temp_repo.commit_working_dir('Mor', 'Main commit')
+    
+    # 4. Detached Short Hash Target
+    temp_repo.checkout(base_hash)
+    (temp_repo.working_dir / 'raw.txt').write_text('Raw Line')
+    raw_hash = temp_repo.commit_working_dir('Mor', 'Raw commit')
+    
+    # CRITICAL TEST FIX: Force it to be a pure string to mimic CLI typing!
+    short_hash = str(raw_hash)[:SHORT_HASH_LENGTH] 
+    
+    # --- Execute Branch Merge ---
+    temp_repo.checkout('heads/main')
+    result_code_branch = cli_commands.merge(working_dir_path=temp_repo.working_dir, repo_dir=temp_repo.repo_dir, target_ref='feature', author='Mor')
+    assert result_code_branch == 0
+    
+    # --- Execute Short Hash Merge ---
+    temp_repo.checkout(main_hash)
+    result_code_hash = cli_commands.merge(working_dir_path=temp_repo.working_dir, repo_dir=temp_repo.repo_dir, target_ref=short_hash, author='Mor')
+    assert result_code_hash == 0
