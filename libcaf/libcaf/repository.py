@@ -930,11 +930,9 @@ class Repository:
                     restore_blob_to_path(self.objects_dir(), blob_hash, abs_path)
 
             elif isinstance(diff, ModifiedDiff):
-                # Handle mutations between TREE and BLOB gracefully
                 if diff.record.type == TreeRecordType.TREE:
-                    if abs_path.exists() and abs_path.is_file():
-                        abs_path.unlink()
-                    extract_tree_to_disk(self.objects_dir(), diff.record.hash, abs_path)
+                    # The child diffs in the flattened list will handle internal file changes.
+                    abs_path.mkdir(parents=True, exist_ok=True)
                 else:
                     blob_hash = target_blob_map.get(rel_path)
                     if blob_hash is None:
