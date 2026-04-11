@@ -322,3 +322,31 @@ def test_checkout_aborts_when_untracked_file_blocks_directory(temp_repo: Reposit
     assert blocking_file.is_file()
     assert blocking_file.read_text() == 'I am a file, not a directory'
     assert temp_repo.head_commit() == commit_ref1
+
+
+def test_checkout_handles_file_directory_mutation(temp_repo) -> None:
+    data_path = temp_repo.working_dir / 'data'
+    data_path.write_text('Just a file')
+    file_commit_hash = temp_repo.commit_working_dir('Mor', 'File commit')
+
+    data_path.unlink()  # Delete the file
+    data_path.mkdir()   # Create the directory
+    (data_path / 'info.txt').write_text('Inside a folder')
+    folder_commit_hash = temp_repo.commit_working_dir('Mor', 'Folder commit')
+
+    # Verify we are currently in the folder state
+    assert data_path.is_dir()
+    assert (data_path / 'info.txt').exists()
+
+    # This should not crash, and should completely obliterate the directory
+    temp_repo.checkout(file_commit_hash)
+
+    # 'data' must be a file again, containing the original text
+    assert data_path.exists()
+    assert data_path.is_file()
+    assert data_path.read_text() == 'Just a file'
+    
+    # And if we go back...
+    temp_repo.checkout(folder_commit_hash)
+    assert data_path.is_dir()
+    assert (data_path / 'info.txt').read_text() == 'Inside a folder'
