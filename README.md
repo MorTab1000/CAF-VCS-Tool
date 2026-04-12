@@ -112,6 +112,7 @@ Once deployed, the caf CLI operates very similarly to standard Git.
 caf init                     # Initialize a new .caf object database
 caf status                   # Show working tree status and untracked files
 caf hash_file <path> --write # Cryptographically hash a file and store the blob
+caf commit <author> "<msg>"   # Auto-stage and snapshot the entire working directory
 caf delete_repo              # Safely destroy the repository
 ```
 
@@ -130,7 +131,7 @@ caf delete_branch <name>     # Delete an existing branch
 caf checkout <branch|hash>   # Safely sync working directory to a target state
 caf checkout -b <new-branch> # Create and immediately switch to a new branch
 caf diff <commit1> <commit2> # Compute the structural delta between two trees
-caf merge <target>           # Perform a 3-way recursive merge with <target>
+caf merge <target> <author>   # Perform a 3-way merge (auto-commits on clean merge)
 caf merge --abort            # Abort an active merge and restore clean HEAD
 ```
 
@@ -188,7 +189,39 @@ caf-engine/
 ```    
 </details>
 
-## 🤝 Contributors
+
+## 🌟 Engine Capabilities
+
+### ⚡ Blazing Fast Branching & Commits
+CAF automatically stages and snapshots the entire working directory. Branching is handled through native directory namespacing, replicating Git's internal architecture.
+<p align="center">
+  <img src="assets/demo.gif" alt="CAF Live Demo" width="800">
+</p>
+
+### 🔀 Native 3-Way Merge & Conflict Resolution
+Unlike basic VCS clones, CAF features a custom-built 3-way merge algorithm. It parses the object database to find the common ancestor, detects textual conflicts, and pauses the merge to allow developer resolution.
+<p align="center">
+  <img src="assets/demo2.gif" alt="CAF Merge Resolution" width="800">
+</p>
+
+---
+
+## 🚀 Try It Live
+
+Don't want to install anything? You can test drive the entire CAF engine right in your browser. The environment comes pre-loaded with Ubuntu, Python, and the CAF CLI fully configured.
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/MorTab1000/CAF-VCS-Tool)
+
+**Once inside the Codespace terminal, try it out:**
+```bash
+mkdir test-repo && cd test-repo
+caf init
+echo "Hello World" > test.txt
+caf commit "Your Name" "Initial commit"
+caf log
+```
+
+## 🤝 Contributing & License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
