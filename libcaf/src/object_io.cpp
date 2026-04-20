@@ -204,8 +204,16 @@ namespace {
     }
 
     void write_with_length(int fd, const std::string &data) {
+        if (data.length() > MAX_LENGTH) {
+            throw std::runtime_error("String length exceeds maximum allowed size");
+        }
+
         uint32_t length = data.length();
         write_u32_le(fd, length);
+
+        if (length == 0) {
+            return;
+        }
 
         if (write(fd, data.c_str(), length) != static_cast<ssize_t>(length)) {
             throw std::runtime_error("Failed to write string");
