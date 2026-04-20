@@ -128,7 +128,7 @@ void save_tree(const std::string &root_dir, const Tree &tree) {
 }
 
 Tree load_tree(const std::string &root_dir, const std::string &tree_hash) {
-    int fd = open_content_for_reading(root_dir.c_str(), tree_hash.c_str());
+    int fd = open_content_for_reading(root_dir, tree_hash);
     ScopedFileLock file_guard(fd);
     uint32_t num_records = read_u32_le(fd);
 
