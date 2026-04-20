@@ -14,6 +14,10 @@
 // Maximum string length for length-prefixed strings
 constexpr uint32_t MAX_LENGTH = 1024 * 1024;  // 1 MB limit for strings
 
+uint32_t read_u32_le(int fd); // Helper function to read uint32 in little-endian order
+int64_t read_i64_le(int fd); // Helper function to read int64 in little-endian order
+void write_u32_le(int fd, uint32_t value); // Helper function to write uint32 in little-endian order
+void write_i64_le(int fd, int64_t value); // Helper function to write int64 in little-endian order
 std::string read_length_prefixed_string(int fd); // Helper function to read a length-prefixed string safely
 void write_with_length(int fd, const std::string &data); // Helper function to write a length-prefixed string safely
 void save_tree_record(int fd, const TreeRecord &record); // Helper function to serialize a TreeRecord
@@ -30,12 +34,10 @@ void save_commit(const std::string &root_dir, const Commit &commit) {
         write_with_length(fd, commit.author);
         write_with_length(fd, commit.message);
 
-        if (write(fd, &commit.timestamp, sizeof(commit.timestamp)) != sizeof(commit.timestamp))
-            throw std::runtime_error("Failed to write timestamp");
+        write_i64_le(fd, static_cast<int64_t>(commit.timestamp));
 
         uint32_t num_parents = static_cast<uint32_t>(commit.parents.size());
-        if (write(fd, &num_parents, sizeof(num_parents)) != sizeof(num_parents))
-            throw std::runtime_error("Failed to write number of parents");
+        write_u32_le(fd, num_parents);
         for (const auto &parent_hash : commit.parents) {
             write_with_length(fd, parent_hash);
         }
@@ -56,13 +58,9 @@ Commit load_commit(const std::string &root_dir, const std::string &commit_hash) 
     std::string author = read_length_prefixed_string(fd);
     std::string message = read_length_prefixed_string(fd);
 
-    uint64_t timestamp;
-    if (read(fd, &timestamp, sizeof(timestamp)) != sizeof(timestamp))
-        throw std::runtime_error("Failed to read timestamp");
+    int64_t timestamp = read_i64_le(fd);
 
-    uint32_t num_parents ;
-    if (read(fd, &num_parents, sizeof(num_parents)) != sizeof(num_parents))
-        throw std::runtime_error("Failed to read number of parents");
+    uint32_t num_parents = read_u32_le(fd);
 
     std::vector<std::string> parents;
     for (uint32_t i = 0; i < num_parents; ++i) {
@@ -82,9 +80,8 @@ void save_tree(const std::string &root_dir, const Tree &tree) {
     int fd = open_content_for_writing(root_dir, tree_hash);
 
      try {
-        uint32_t num_records = tree.records.size();
-        if (write(fd, &num_records, sizeof(num_records)) != sizeof(num_records))
-            throw std::runtime_error("Failed to write number of records");
+        uint32_t num_records = static_cast<uint32_t>(tree.records.size());
+        write_u32_le(fd, num_records);
 
         for (const auto &[name, record] : tree.records) {
             save_tree_record(fd, record);
@@ -101,9 +98,7 @@ void save_tree(const std::string &root_dir, const Tree &tree) {
 Tree load_tree(const std::string &root_dir, const std::string &tree_hash) {
     int fd = open_content_for_reading(root_dir.c_str(), tree_hash.c_str());
 
-    uint32_t num_records;
-    if (read(fd, &num_records, sizeof(num_records)) != sizeof(num_records))
-        throw std::runtime_error("Failed to read the number of records");
+    uint32_t num_records = read_u32_le(fd);
 
     std::map<std::string, TreeRecord> records;
     for (uint32_t i = 0; i < num_records; ++i) {
@@ -117,10 +112,69 @@ Tree load_tree(const std::string &root_dir, const std::string &tree_hash) {
     return Tree(records);
 }
 
+uint32_t read_u32_le(int fd) {
+    uint8_t bytes[4];
+    if (read(fd, bytes, sizeof(bytes)) != sizeof(bytes)) {
+        throw std::runtime_error("Failed to read uint32");
+    }
+
+    return static_cast<uint32_t>(bytes[0]) |
+           (static_cast<uint32_t>(bytes[1]) << 8) |
+           (static_cast<uint32_t>(bytes[2]) << 16) |
+           (static_cast<uint32_t>(bytes[3]) << 24);
+}
+
+int64_t read_i64_le(int fd) {
+    uint8_t bytes[8];
+    if (read(fd, bytes, sizeof(bytes)) != sizeof(bytes)) {
+        throw std::runtime_error("Failed to read int64");
+    }
+
+    uint64_t value = static_cast<uint64_t>(bytes[0]) |
+                     (static_cast<uint64_t>(bytes[1]) << 8) |
+                     (static_cast<uint64_t>(bytes[2]) << 16) |
+                     (static_cast<uint64_t>(bytes[3]) << 24) |
+                     (static_cast<uint64_t>(bytes[4]) << 32) |
+                     (static_cast<uint64_t>(bytes[5]) << 40) |
+                     (static_cast<uint64_t>(bytes[6]) << 48) |
+                     (static_cast<uint64_t>(bytes[7]) << 56);
+
+    return static_cast<int64_t>(value);
+}
+
+void write_u32_le(int fd, uint32_t value) {
+    uint8_t bytes[4] = {
+        static_cast<uint8_t>(value & 0xFF),
+        static_cast<uint8_t>((value >> 8) & 0xFF),
+        static_cast<uint8_t>((value >> 16) & 0xFF),
+        static_cast<uint8_t>((value >> 24) & 0xFF),
+    };
+
+    if (write(fd, bytes, sizeof(bytes)) != sizeof(bytes)) {
+        throw std::runtime_error("Failed to write uint32");
+    }
+}
+
+void write_i64_le(int fd, int64_t value) {
+    uint64_t uvalue = static_cast<uint64_t>(value);
+    uint8_t bytes[8] = {
+        static_cast<uint8_t>(uvalue & 0xFF),
+        static_cast<uint8_t>((uvalue >> 8) & 0xFF),
+        static_cast<uint8_t>((uvalue >> 16) & 0xFF),
+        static_cast<uint8_t>((uvalue >> 24) & 0xFF),
+        static_cast<uint8_t>((uvalue >> 32) & 0xFF),
+        static_cast<uint8_t>((uvalue >> 40) & 0xFF),
+        static_cast<uint8_t>((uvalue >> 48) & 0xFF),
+        static_cast<uint8_t>((uvalue >> 56) & 0xFF),
+    };
+
+    if (write(fd, bytes, sizeof(bytes)) != sizeof(bytes)) {
+        throw std::runtime_error("Failed to write int64");
+    }
+}
+
 std::string read_length_prefixed_string(int fd) {
-    uint32_t length;
-    if (read(fd, &length, sizeof(length)) != sizeof(length))
-        throw std::runtime_error("Failed to read length");
+    uint32_t length = read_u32_le(fd);
 
     if (length > MAX_LENGTH)
         throw std::runtime_error("Length exceeds maximum");
@@ -135,7 +189,9 @@ std::string read_length_prefixed_string(int fd) {
 
 void write_with_length(int fd, const std::string &data) {
     uint32_t length = data.length();
-    if (write(fd, &length, sizeof(length)) != sizeof(length) || write(fd, data.c_str(), length) != static_cast<ssize_t>(length)) {
+    write_u32_le(fd, length);
+
+    if (write(fd, data.c_str(), length) != static_cast<ssize_t>(length)) {
         throw std::runtime_error("Failed to write string");
     }
 }
