@@ -1,7 +1,8 @@
 from pathlib import Path
-
+import struct
+import os
+import pytest
 from libcaf.plumbing import hash_object, load_commit, load_tree, save_commit, save_tree
-
 from libcaf import Commit, Tree, TreeRecord, TreeRecordType
 
 
@@ -47,3 +48,19 @@ def test_save_load_tree(temp_repo_dir: Path) -> None:
 
     assert loaded_tree.records.keys() == records.keys()
     assert loaded_tree.records == records
+
+
+def test_max_length_guard_rejects_corrupted_object(tmp_path):
+        root_dir = str(tmp_path)
+        fake_hash = "badc0ffee0000000000000000000000000000000"
+    
+        object_path = os.path.join(root_dir, fake_hash[:2], fake_hash)
+        os.makedirs(os.path.dirname(object_path), exist_ok=True)
+    
+        oversized_length = 2 * 1024 * 1024
+    
+        with open(object_path, "wb") as f:
+            f.write(struct.pack("<I", oversized_length))
+    
+        with pytest.raises(RuntimeError, match="Length exceeds maximum"):
+            load_commit(root_dir, fake_hash)
