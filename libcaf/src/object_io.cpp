@@ -14,6 +14,7 @@
 // Maximum string length for length-prefixed strings
 constexpr uint32_t MAX_LENGTH = 1024 * 1024;  // 1 MB limit for strings
 constexpr uint32_t MAX_PARENTS = 65536;  // Maximum number of parent commits to prevent excessive memory usage
+constexpr uint32_t MAX_RECORDS = 1048576;     // 1 million files max per directory
 
 namespace {
     // RAII wrapper for safe file descriptor management
@@ -108,6 +109,10 @@ void save_tree(const std::string &root_dir, const Tree &tree) {
 
      try {
         ScopedFileLock file_guard(fd);
+        if (tree.records.size() > MAX_RECORDS) {
+            throw std::runtime_error("Number of tree records exceeds maximum allowed limit");
+        }
+
         uint32_t num_records = static_cast<uint32_t>(tree.records.size());
         write_u32_le(fd, num_records);
 
@@ -126,6 +131,10 @@ Tree load_tree(const std::string &root_dir, const std::string &tree_hash) {
     int fd = open_content_for_reading(root_dir.c_str(), tree_hash.c_str());
     ScopedFileLock file_guard(fd);
     uint32_t num_records = read_u32_le(fd);
+
+    if (num_records > MAX_RECORDS) {
+        throw std::runtime_error("Number of tree records exceeds maximum allowed limit");
+    }
 
     std::map<std::string, TreeRecord> records;
     for (uint32_t i = 0; i < num_records; ++i) {
