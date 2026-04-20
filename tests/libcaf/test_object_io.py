@@ -1,9 +1,9 @@
 from pathlib import Path
-from libcaf.plumbing import hash_object, load_commit, load_tree, save_commit, save_tree
-from libcaf import Commit, Tree, TreeRecord, TreeRecordType
 import struct
 import os
 import pytest
+from libcaf.plumbing import hash_object, load_commit, load_tree, save_commit, save_tree
+from libcaf import Commit, Tree, TreeRecord, TreeRecordType
 
 
 def test_save_load_commit(temp_repo_dir: Path) -> None:
