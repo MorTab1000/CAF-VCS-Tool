@@ -188,6 +188,10 @@ namespace {
     std::string read_length_prefixed_string(int fd) {
         uint32_t length = read_u32_le(fd);
 
+        if (length == 0) {
+            return "";
+        }
+
         if (length > MAX_LENGTH)
             throw std::runtime_error("Length exceeds maximum");
 
