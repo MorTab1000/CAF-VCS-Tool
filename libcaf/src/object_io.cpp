@@ -32,6 +32,8 @@ namespace {
         ScopedFileLock(const ScopedFileLock&) = delete;
         ScopedFileLock& operator=(const ScopedFileLock&) = delete;
     };
+    void read_exact(int fd, uint8_t* buffer, size_t length); // Helper function to read exact number of bytes
+    void write_exact(int fd, const uint8_t* buffer, size_t length); // Helper function to write exact number of bytes
     uint32_t read_u32_le(int fd); // Helper function to read uint32 in little-endian order
     int64_t read_i64_le(int fd); // Helper function to read int64 in little-endian order
     void write_u32_le(int fd, uint32_t value); // Helper function to write uint32 in little-endian order
@@ -40,7 +42,7 @@ namespace {
     void write_with_length(int fd, const std::string &data); // Helper function to write a length-prefixed string safely
     void save_tree_record(int fd, const TreeRecord &record); // Helper function to serialize a TreeRecord
     TreeRecord load_tree_record(int fd); // Helper function to deserialize a TreeRecord
-}
+}   
 // Serialize Commit to disk
 void save_commit(const std::string &root_dir, const Commit &commit) {
     std::string commit_hash = hash_object(commit);
@@ -124,11 +126,36 @@ Tree load_tree(const std::string &root_dir, const std::string &tree_hash) {
 }
 
 namespace { 
+    void read_exact(int fd, uint8_t* buffer, size_t length) {
+        size_t bytes_read = 0;
+        while (bytes_read < length) {
+            ssize_t result = read(fd, buffer + bytes_read, length - bytes_read);
+            if (result < 0) {
+                if (errno == EINTR) continue; // Interrupted by signal, try again
+                throw std::runtime_error("System error during read");
+            }
+            if (result == 0) {
+                throw std::runtime_error("Unexpected EOF while reading object");
+            }
+            bytes_read += result;
+        }
+    }
+
+    void write_exact(int fd, const uint8_t* buffer, size_t length) {
+        size_t bytes_written = 0;
+        while (bytes_written < length) {
+            ssize_t result = write(fd, buffer + bytes_written, length - bytes_written);
+            if (result < 0) {
+                if (errno == EINTR) continue; // Interrupted by signal, try again
+                throw std::runtime_error("System error during write");
+            }
+            bytes_written += result;
+        }
+    }
+
     uint32_t read_u32_le(int fd) {
         uint8_t bytes[4];
-        if (read(fd, bytes, sizeof(bytes)) != sizeof(bytes)) {
-            throw std::runtime_error("Failed to read uint32");
-        }
+        read_exact(fd, bytes, sizeof(bytes));
 
         return static_cast<uint32_t>(bytes[0]) |
             (static_cast<uint32_t>(bytes[1]) << 8) |
@@ -138,9 +165,7 @@ namespace {
 
     int64_t read_i64_le(int fd) {
         uint8_t bytes[8];
-        if (read(fd, bytes, sizeof(bytes)) != sizeof(bytes)) {
-            throw std::runtime_error("Failed to read int64");
-        }
+        read_exact(fd, bytes, sizeof(bytes));
 
         uint64_t value = static_cast<uint64_t>(bytes[0]) |
                         (static_cast<uint64_t>(bytes[1]) << 8) |
@@ -162,9 +187,7 @@ namespace {
             static_cast<uint8_t>((value >> 24) & 0xFF),
         };
 
-        if (write(fd, bytes, sizeof(bytes)) != sizeof(bytes)) {
-            throw std::runtime_error("Failed to write uint32");
-        }
+        write_exact(fd, bytes, sizeof(bytes));
     }
 
     void write_i64_le(int fd, int64_t value) {
@@ -180,9 +203,7 @@ namespace {
             static_cast<uint8_t>((uvalue >> 56) & 0xFF),
         };
 
-        if (write(fd, bytes, sizeof(bytes)) != sizeof(bytes)) {
-            throw std::runtime_error("Failed to write int64");
-        }
+        write_exact(fd, bytes, sizeof(bytes));
     }
 
     std::string read_length_prefixed_string(int fd) {
@@ -197,9 +218,7 @@ namespace {
 
         std::string result(length, '\0');
 
-        if (read(fd, &result[0], length) != static_cast<ssize_t>(length))
-            throw std::runtime_error("Failed to read string");
-
+        read_exact(fd, reinterpret_cast<uint8_t*>(&result[0]), length);
         return result;
     }
 
@@ -215,15 +234,12 @@ namespace {
             return;
         }
 
-        if (write(fd, data.c_str(), length) != static_cast<ssize_t>(length)) {
-            throw std::runtime_error("Failed to write string");
-        }
+        write_exact(fd, reinterpret_cast<const uint8_t*>(data.c_str()), length);
     }
 
     void save_tree_record(int fd, const TreeRecord &record) {
         uint8_t type = static_cast<uint8_t>(record.type);
-        if (write(fd, &type, sizeof(type)) != sizeof(type))
-            throw std::runtime_error("Failed to write type");
+        write_exact(fd, &type, sizeof(type));
 
         write_with_length(fd, record.hash);
         write_with_length(fd, record.name);
@@ -232,9 +248,7 @@ namespace {
     TreeRecord load_tree_record(int fd) {
         uint8_t type;
 
-        if (read(fd, &type, sizeof(type)) != sizeof(type)) {
-            throw std::runtime_error("Failed to read TreeRecord type");
-        }
+        read_exact(fd, &type, sizeof(type));
 
         TreeRecord::Type record_type = static_cast<TreeRecord::Type>(type);
         std::string hash = read_length_prefixed_string(fd);
