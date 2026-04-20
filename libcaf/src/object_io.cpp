@@ -149,6 +149,11 @@ namespace {
                 if (errno == EINTR) continue; // Interrupted by signal, try again
                 throw std::runtime_error("System error during write");
             }
+            
+            if (result == 0) {
+                throw std::runtime_error("Failed to make forward progress during write (possible disk full)");
+            }
+
             bytes_written += result;
         }
     }
