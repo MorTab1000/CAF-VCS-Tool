@@ -6,6 +6,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <map>
+ #include <cerrno>
 
 #include "caf.h"
 #include "object_io.h"
