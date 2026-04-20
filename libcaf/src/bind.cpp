@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+ #include <cstdint>
 #include "caf.h"
 #include "hash_types.h"
 #include "object_io.h" 
