@@ -13,6 +13,7 @@
 
 // Maximum string length for length-prefixed strings
 constexpr uint32_t MAX_LENGTH = 1024 * 1024;  // 1 MB limit for strings
+constexpr uint32_t MAX_PARENTS = 65536;  // Maximum number of parent commits to prevent excessive memory usage
 
 namespace {
     // RAII wrapper for safe file descriptor management
@@ -57,6 +58,10 @@ void save_commit(const std::string &root_dir, const Commit &commit) {
 
         write_i64_le(fd, static_cast<int64_t>(commit.timestamp));
 
+        if (commit.parents.size() > MAX_PARENTS) {
+            throw std::runtime_error("Number of parents exceeds maximum allowed limit");
+        }
+
         uint32_t num_parents = static_cast<uint32_t>(commit.parents.size());
         write_u32_le(fd, num_parents);
         for (const auto &parent_hash : commit.parents) {
@@ -81,8 +86,14 @@ Commit load_commit(const std::string &root_dir, const std::string &commit_hash) 
     int64_t timestamp = read_i64_le(fd);
 
     uint32_t num_parents = read_u32_le(fd);
-
+    if (num_parents > MAX_PARENTS) {
+            throw std::runtime_error("Number of parents exceeds maximum allowed limit");
+        }
+    
+    
     std::vector<std::string> parents;
+    parents.reserve(num_parents);
+
     for (uint32_t i = 0; i < num_parents; ++i) {
         parents.push_back(read_length_prefixed_string(fd));
     }
@@ -149,7 +160,7 @@ namespace {
                 if (errno == EINTR) continue; // Interrupted by signal, try again
                 throw std::runtime_error("System error during write");
             }
-            
+
             if (result == 0) {
                 throw std::runtime_error("Failed to make forward progress during write (possible disk full)");
             }
