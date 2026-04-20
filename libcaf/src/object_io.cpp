@@ -15,6 +15,23 @@
 constexpr uint32_t MAX_LENGTH = 1024 * 1024;  // 1 MB limit for strings
 
 namespace {
+    // RAII wrapper for safe file descriptor management
+    struct ScopedFileLock {
+        int fd;
+        
+        explicit ScopedFileLock(int fd) : fd(fd) {}
+        
+        ~ScopedFileLock() {
+            if (fd >= 0) {
+                flock(fd, LOCK_UN);
+                close(fd);
+            }
+        }
+        
+        // Delete copy operations to prevent double-closing
+        ScopedFileLock(const ScopedFileLock&) = delete;
+        ScopedFileLock& operator=(const ScopedFileLock&) = delete;
+    };
     uint32_t read_u32_le(int fd); // Helper function to read uint32 in little-endian order
     int64_t read_i64_le(int fd); // Helper function to read int64 in little-endian order
     void write_u32_le(int fd, uint32_t value); // Helper function to write uint32 in little-endian order
@@ -54,6 +71,7 @@ void save_commit(const std::string &root_dir, const Commit &commit) {
 // Deserialize Commit from disk
 Commit load_commit(const std::string &root_dir, const std::string &commit_hash) {
     int fd = open_content_for_reading(root_dir, commit_hash);
+    ScopedFileLock file_guard(fd);
 
     std::string tree_hash = read_length_prefixed_string(fd);
     std::string author = read_length_prefixed_string(fd);
@@ -68,10 +86,6 @@ Commit load_commit(const std::string &root_dir, const std::string &commit_hash) 
         parents.push_back(read_length_prefixed_string(fd));
     }
     
-
-    flock(fd, LOCK_UN);
-    close(fd);
-
     return Commit(tree_hash, author, message, timestamp, parents);
 }
 
@@ -113,7 +127,7 @@ Tree load_tree(const std::string &root_dir, const std::string &tree_hash) {
     return Tree(records);
 }
 
-namespace {
+namespace { 
     uint32_t read_u32_le(int fd) {
         uint8_t bytes[4];
         if (read(fd, bytes, sizeof(bytes)) != sizeof(bytes)) {
