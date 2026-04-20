@@ -44,10 +44,11 @@ namespace {
 // Serialize Commit to disk
 void save_commit(const std::string &root_dir, const Commit &commit) {
     std::string commit_hash = hash_object(commit);
-
     int fd = open_content_for_writing(root_dir, commit_hash);
 
     try {
+        ScopedFileLock file_guard(fd);
+
         write_with_length(fd, commit.tree_hash);
         write_with_length(fd, commit.author);
         write_with_length(fd, commit.message);
@@ -60,8 +61,6 @@ void save_commit(const std::string &root_dir, const Commit &commit) {
             write_with_length(fd, parent_hash);
         }
 
-        flock(fd, LOCK_UN);
-        close(fd);
     } catch (const std::exception &e) {
         delete_content(root_dir, commit_hash);
         throw;
@@ -95,6 +94,7 @@ void save_tree(const std::string &root_dir, const Tree &tree) {
     int fd = open_content_for_writing(root_dir, tree_hash);
 
      try {
+        ScopedFileLock file_guard(fd);
         uint32_t num_records = static_cast<uint32_t>(tree.records.size());
         write_u32_le(fd, num_records);
 
@@ -102,8 +102,7 @@ void save_tree(const std::string &root_dir, const Tree &tree) {
             save_tree_record(fd, record);
         }
 
-        flock(fd, LOCK_UN);
-        close(fd);
+
     } catch (const std::exception &e) {
         delete_content(root_dir, tree_hash);
         throw;
@@ -112,7 +111,7 @@ void save_tree(const std::string &root_dir, const Tree &tree) {
 
 Tree load_tree(const std::string &root_dir, const std::string &tree_hash) {
     int fd = open_content_for_reading(root_dir.c_str(), tree_hash.c_str());
-
+    ScopedFileLock file_guard(fd);
     uint32_t num_records = read_u32_le(fd);
 
     std::map<std::string, TreeRecord> records;
@@ -120,9 +119,6 @@ Tree load_tree(const std::string &root_dir, const std::string &tree_hash) {
         TreeRecord record = load_tree_record(fd);
         records.emplace(record.name, record);
     }
-
-    flock(fd, LOCK_UN);
-    close(fd);
 
     return Tree(records);
 }
