@@ -53,7 +53,7 @@ PYBIND11_MODULE(_libcaf, m) {
     .def_readonly("records", &Tree::records);
 
     py::class_<Commit>(m, "Commit")
-        .def(py::init<const string &, const string&, const string&, int64_t, const std::vector<std::string>&>())
+        .def(py::init<const string &, const string&, const string&, std::int64_t, const std::vector<std::string>&>())
         .def_readonly("tree_hash", &Commit::tree_hash)
         .def_readonly("author", &Commit::author)
         .def_readonly("message", &Commit::message)
